@@ -8,6 +8,9 @@ export async function getImportedRateRows(): Promise<RateRow[]> {
       status: {
         in: [RateSheetStatus.DRAFT, RateSheetStatus.VERIFIED],
       },
+      rules: {
+        some: {},
+      },
     },
     include: {
       bank: true,

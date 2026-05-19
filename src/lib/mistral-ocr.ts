@@ -15,14 +15,14 @@ type MistralOcrResponse = {
 
 export async function extractPdfMarkdownWithMistral(file: File) {
   const buffer = Buffer.from(await file.arrayBuffer());
-  return extractDataUrlMarkdownWithMistral(`data:${file.type || "application/pdf"};base64,${buffer.toString("base64")}`, "document_url");
+  return extractDataUrlMarkdownWithMistral(`data:${file.type || "application/pdf"};base64,${buffer.toString("base64")}`, "document_url", buildRateExtractionPrompt());
 }
 
 export async function extractImageMarkdownWithMistral(buffer: Buffer, mimeType: string) {
-  return extractDataUrlMarkdownWithMistral(`data:${mimeType};base64,${buffer.toString("base64")}`, "image_url");
+  return extractDataUrlMarkdownWithMistral(`data:${mimeType};base64,${buffer.toString("base64")}`, "image_url", buildRateExtractionPrompt());
 }
 
-async function extractDataUrlMarkdownWithMistral(dataUrl: string, documentType: "document_url" | "image_url") {
+async function extractDataUrlMarkdownWithMistral(dataUrl: string, documentType: "document_url" | "image_url", prompt?: string) {
   const apiKey = process.env.MISTRAL_API_KEY;
 
   if (!apiKey) {
@@ -45,6 +45,7 @@ async function extractDataUrlMarkdownWithMistral(dataUrl: string, documentType: 
       extract_header: true,
       extract_footer: true,
       include_image_base64: false,
+      ...(prompt ? { prompt } : {}),
     }),
   });
 
@@ -69,6 +70,24 @@ async function extractDataUrlMarkdownWithMistral(dataUrl: string, documentType: 
     model: payload.model || "mistral-ocr-latest",
     rawResponse: payload as Record<string, unknown>,
   };
+}
+
+function buildRateExtractionPrompt() {
+  return `Extrais ce barème bancaire directement en Markdown clair.
+
+Règles :
+- Retourne uniquement du Markdown.
+- Mets les grilles de taux en tableaux Markdown lisibles.
+- Ne renvoie pas de liens vers des fichiers tbl-x.md : insère le contenu des tableaux directement.
+- Corrige les erreurs OCR évidentes de libellés, sans inventer de taux.
+- Pour les taux par revenus, privilégie ce format :
+| Revenus | ≤ 10 ans | ≤ 12 ans | ≤ 15 ans | ≤ 17 ans | ≤ 20 ans | ≤ 25 ans |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 personne | | | | | | |
+| 120K€+ | 3,02% | ... |
+| 2 personnes et + | | | | | | |
+- Mets les prêts relais, prêts in fine, bonifications, décotes et majorations dans des tableaux séparés.
+- Ajoute les notes importantes sous les tableaux.`;
 }
 
 function pageToMarkdown(page: MistralOcrPage) {

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractPdfMarkdownWithMistral } from "@/lib/mistral-ocr";
-import { normalizeRateMarkdownWithMistral } from "@/lib/mistral-normalize";
 import { extractOfficeMarkdown, isOfficeRateFile } from "@/lib/office-markdown";
 import { createRateSheetDraftFromMarkdown } from "@/lib/rate-importer";
 
@@ -28,20 +27,14 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const ocr = isPdf ? await extractPdfMarkdownWithMistral(file) : await extractOfficeMarkdown(file);
-    const normalized = await normalizeMarkdownSafely(ocr.markdown);
+    const extraction = isPdf ? await extractPdfMarkdownWithMistral(file) : await extractOfficeMarkdown(file);
     const result = await createRateSheetDraftFromMarkdown({
       fileName: file.name,
       fileSize: file.size,
       mimeType: file.type || inferMimeType(file.name),
-      markdown: normalized.markdown,
-      rawResponse: {
-        extraction: ocr.rawResponse,
-        normalization: normalized.rawResponse,
-        rawMarkdown: ocr.markdown,
-        normalizationError: normalized.error,
-      },
-      providerModel: `${ocr.model}+${normalized.model}`,
+      markdown: extraction.markdown,
+      rawResponse: extraction.rawResponse,
+      providerModel: extraction.model,
     });
 
     return NextResponse.json({
@@ -57,23 +50,6 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 },
     );
-  }
-}
-
-async function normalizeMarkdownSafely(markdown: string) {
-  try {
-    const normalized = await normalizeRateMarkdownWithMistral(markdown);
-    return {
-      ...normalized,
-      error: null,
-    };
-  } catch (error) {
-    return {
-      markdown,
-      model: "raw-markdown",
-      rawResponse: null,
-      error: error instanceof Error ? error.message : "Normalisation impossible.",
-    };
   }
 }
 

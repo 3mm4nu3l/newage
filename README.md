@@ -23,7 +23,6 @@ Copier `.env.example` vers `.env`, puis renseigner :
 - `TWILIO_AUTH_TOKEN`
 - `TWILIO_VERIFY_SERVICE_SID`
 - `MISTRAL_API_KEY` pour l'extraction OCR des PDF de baremes. Les fichiers DOCX/DOC sont extraits côté serveur.
-- `MISTRAL_NORMALIZE_MODEL` optionnel, par defaut `mistral-small-latest`, pour nettoyer le Markdown OCR avant import.
 - `LEAD_TOKEN_SECRET`
 - `TWENTY_INTAKE_WEBHOOK_URL` pour le MVP, ou `TWENTY_API_BASE_URL` + `TWENTY_API_KEY` pour l'API directe.
 

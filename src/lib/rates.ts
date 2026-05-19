@@ -15,6 +15,7 @@ export type RateRow = {
   sourceFile: string;
   status: RateStatus;
   note?: string;
+  importedMarkdown?: string;
 };
 
 function createLaBanquePostaleRows(): RateRow[] {

@@ -15,6 +15,11 @@ export async function getImportedRateRows(): Promise<RateRow[]> {
       rateSheet: {
         include: {
           bank: true,
+          tables: {
+            orderBy: {
+              order: "asc",
+            },
+          },
         },
       },
     },
@@ -40,7 +45,24 @@ export async function getImportedRateRows(): Promise<RateRow[]> {
     sourceFile: rule.rateSheet.sourceFile,
     status: rule.rateSheet.status === RateSheetStatus.VERIFIED ? "verified" : "review",
     note: rule.rateSheet.status === RateSheetStatus.DRAFT ? "Brouillon importé par OCR Mistral, à relire avant publication." : undefined,
+    importedMarkdown: readImportedMarkdown(rule.rateSheet.tables),
   }));
+}
+
+function readImportedMarkdown(tables: Array<{ payload: unknown }>) {
+  for (const table of tables) {
+    if (!table.payload || typeof table.payload !== "object" || !("markdown" in table.payload)) {
+      continue;
+    }
+
+    const markdown = (table.payload as Record<string, unknown>).markdown;
+
+    if (typeof markdown === "string" && markdown.trim()) {
+      return markdown;
+    }
+  }
+
+  return undefined;
 }
 
 function formatCustomerType(value: string) {

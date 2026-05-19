@@ -548,6 +548,46 @@ textarea:focus {
   overflow-x: auto;
 }
 
+.imported-table-stack {
+  display: grid;
+  gap: 22px;
+  padding: 18px;
+}
+
+.imported-table-wrap {
+  border: 1px solid var(--line);
+}
+
+.imported-table-wrap h3 {
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  font-size: 0.9rem;
+  margin: 0;
+  padding: 12px 14px;
+}
+
+.imported-rate-table {
+  min-width: 880px;
+}
+
+.imported-rate-table th {
+  background: var(--panel-soft);
+  font-size: 0.74rem;
+  line-height: 1.2;
+  white-space: normal;
+}
+
+.imported-rate-table td:first-child,
+.imported-rate-table td:nth-child(2),
+.imported-rate-table td:nth-child(3) {
+  color: var(--text);
+  font-weight: 760;
+}
+
+.imported-rate-table .rate-cell {
+  font-size: 1rem;
+}
+
 table {
   border-collapse: collapse;
   min-width: 1120px;

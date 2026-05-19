@@ -171,6 +171,7 @@ export function RatesTable({ rows }: RatesTableProps) {
         return (a.rate ?? Number.POSITIVE_INFINITY) - (b.rate ?? Number.POSITIVE_INFINITY);
       });
   }, [rows, selectedBank]);
+  const importedMarkdown = selectedRows.find((row) => row.importedMarkdown)?.importedMarkdown;
 
   const isSocieteGeneraleBank = selectedBank === "Société Générale";
   const isBprpBank = selectedBank === "Banque Populaire Rives de Paris";
@@ -359,7 +360,9 @@ export function RatesTable({ rows }: RatesTableProps) {
         <span>{latestUpdate ? `Mise à jour : ${latestUpdate}` : "Mise à jour à compléter"}</span>
       </div>
 
-      {isSocieteGeneraleBank ? (
+      {importedMarkdown ? (
+        <ImportedMarkdownRateTable markdown={importedMarkdown} rows={selectedRows} />
+      ) : isSocieteGeneraleBank ? (
         <SgRateTable rows={sgRows} />
       ) : isBprpBank ? (
         <BprpRateTable activeTab={activeBprpTab} onTabChange={setActiveBprpTab} rows={bprpRows} />
@@ -394,6 +397,154 @@ export function RatesTable({ rows }: RatesTableProps) {
       )}
     </div>
   );
+}
+
+function ImportedMarkdownRateTable({ markdown, rows }: { markdown: string; rows: RateRow[] }) {
+  const tables = parseMarkdownTables(markdown);
+
+  if (!tables.length) {
+    return <DefaultRateTable rows={rows} />;
+  }
+
+  return (
+    <>
+      <div className="imported-table-stack">
+        {tables.map((table, index) => (
+          <div className="table-scroll imported-table-wrap" key={`${table.title}-${index}`}>
+            {table.title ? <h3>{table.title}</h3> : null}
+            <table className="imported-rate-table">
+              <thead>
+                {table.headers.map((headerRow, headerIndex) => (
+                  <tr key={headerIndex}>
+                    {headerRow.map((cell, cellIndex) => (
+                      <th key={`${headerIndex}-${cellIndex}`}>{cell || ""}</th>
+                    ))}
+                  </tr>
+                ))}
+              </thead>
+              <tbody>
+                {table.rows.map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    {row.map((cell, cellIndex) => (
+                      <td className={parseRateValue(cell) !== null ? "rate-cell" : ""} key={`${rowIndex}-${cellIndex}`}>
+                        {parseRateValue(cell) !== null ? formatRate(parseRateValue(cell)) : cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+
+      <div className="rate-notes">
+        <strong>À noter</strong>
+        <p>Tableau généré depuis l'extraction OCR Mistral. Les libellés OCR doivent être relus avant validation définitive du barème.</p>
+      </div>
+    </>
+  );
+}
+
+function parseMarkdownTables(markdown: string) {
+  const blocks = extractMarkdownTableBlocks(markdown);
+
+  return blocks
+    .map((block, index) => {
+      const lines = normalizeMarkdownTableLines(block);
+      const separatorIndex = lines.findIndex((line) => isMarkdownSeparatorRow(parseMarkdownCells(line)));
+
+      if (separatorIndex < 1) {
+        return null;
+      }
+
+      const title = findTitleBeforeTable(markdown, block) || (blocks.length > 1 ? `Tableau ${index + 1}` : "");
+      const headers = lines.slice(0, separatorIndex).map(parseMarkdownCells);
+      const rows = lines
+        .slice(separatorIndex + 1)
+        .map(parseMarkdownCells)
+        .filter((row) => row.some(Boolean));
+
+      return { title, headers, rows };
+    })
+    .filter((table): table is { title: string; headers: string[][]; rows: string[][] } => Boolean(table));
+}
+
+function extractMarkdownTableBlocks(markdown: string) {
+  const blocks: string[] = [];
+  let current: string[] = [];
+
+  for (const line of markdown.split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("|") || (current.length && trimmed && !trimmed.startsWith("#"))) {
+      current.push(line);
+      continue;
+    }
+
+    if (current.length) {
+      blocks.push(current.join("\n"));
+      current = [];
+    }
+  }
+
+  if (current.length) {
+    blocks.push(current.join("\n"));
+  }
+
+  return blocks.filter((block) => block.includes("| ---"));
+}
+
+function normalizeMarkdownTableLines(table: string) {
+  const lines: string[] = [];
+
+  for (const line of table.split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      continue;
+    }
+
+    if (trimmed.startsWith("|")) {
+      lines.push(trimmed);
+      continue;
+    }
+
+    if (lines.length) {
+      lines[lines.length - 1] = `${lines[lines.length - 1]} ${trimmed}`;
+    }
+  }
+
+  return lines;
+}
+
+function parseMarkdownCells(line: string) {
+  return line
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.replace(/\*\*/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim());
+}
+
+function isMarkdownSeparatorRow(cells: string[]) {
+  return cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s/g, "")));
+}
+
+function findTitleBeforeTable(markdown: string, tableBlock: string) {
+  const before = markdown.slice(0, markdown.indexOf(tableBlock)).trimEnd();
+  const lastLine = before.split(/\r?\n/).reverse().find((line) => line.trim() && !line.trim().startsWith("|"));
+
+  return lastLine?.replace(/^#+\s*/, "").trim() || "";
+}
+
+function parseRateValue(value: string) {
+  const match = value.match(/^(\d{1,2})\s*[,.]\s*(\d{1,3})\s*%?$/);
+
+  if (!match) {
+    return null;
+  }
+
+  return Number(`${match[1]}.${match[2]}`);
 }
 
 function getLatestUpdateDate(rows: RateRow[]) {

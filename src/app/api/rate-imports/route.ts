@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractPdfMarkdownWithMistral } from "@/lib/mistral-ocr";
+import { extractOfficeMarkdown, isOfficeRateFile } from "@/lib/office-markdown";
 import { createRateSheetDraftFromMarkdown } from "@/lib/rate-importer";
 
 export const runtime = "nodejs";
@@ -12,11 +13,13 @@ export async function POST(request: NextRequest) {
   const file = formData?.get("file");
 
   if (!(file instanceof File)) {
-    return NextResponse.json({ ok: false, message: "PDF manquant." }, { status: 400 });
+    return NextResponse.json({ ok: false, message: "Fichier manquant." }, { status: 400 });
   }
 
-  if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-    return NextResponse.json({ ok: false, message: "Seuls les fichiers PDF sont acceptés." }, { status: 400 });
+  const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+
+  if (!isPdf && !isOfficeRateFile(file)) {
+    return NextResponse.json({ ok: false, message: "Formats acceptés : PDF, DOCX, DOC." }, { status: 400 });
   }
 
   if (file.size > maxFileSize) {
@@ -24,11 +27,11 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const ocr = await extractPdfMarkdownWithMistral(file);
+    const ocr = isPdf ? await extractPdfMarkdownWithMistral(file) : await extractOfficeMarkdown(file);
     const result = await createRateSheetDraftFromMarkdown({
       fileName: file.name,
       fileSize: file.size,
-      mimeType: file.type || "application/pdf",
+      mimeType: file.type || inferMimeType(file.name),
       markdown: ocr.markdown,
       rawResponse: ocr.rawResponse,
       providerModel: ocr.model,
@@ -48,4 +51,18 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     );
   }
+}
+
+function inferMimeType(fileName: string) {
+  const lower = fileName.toLowerCase();
+
+  if (lower.endsWith(".docx")) {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+
+  if (lower.endsWith(".doc")) {
+    return "application/msword";
+  }
+
+  return "application/pdf";
 }

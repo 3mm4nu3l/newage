@@ -285,7 +285,7 @@ export function RatesTable({ rows }: RatesTableProps) {
           ref={fileInputRef}
           className="sr-only"
           type="file"
-          accept="application/pdf,.pdf"
+          accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/msword,.doc"
           onChange={(event) => {
             void handleRateImport(event.target.files?.[0]);
           }}

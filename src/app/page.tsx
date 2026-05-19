@@ -1,8 +1,12 @@
 import Image from "next/image";
 import { RatesTable } from "@/components/RatesTable";
+import { getImportedRateRows } from "@/lib/db-rate-rows";
 import { rateRows } from "@/lib/rates";
 
-export default function Home() {
+export default async function Home() {
+  const importedRows = await getImportedRateRows();
+  const rows = mergeRows(rateRows, importedRows);
+
   return (
     <main>
       <header className="site-header">
@@ -16,8 +20,13 @@ export default function Home() {
           <p className="eyebrow">Barèmes</p>
           <h1>Taux des banques</h1>
         </div>
-        <RatesTable rows={rateRows} />
+        <RatesTable rows={rows} />
       </section>
     </main>
   );
+}
+
+function mergeRows(baseRows: typeof rateRows, importedRows: Awaited<ReturnType<typeof getImportedRateRows>>) {
+  const importedBanks = new Set(importedRows.map((row) => row.bank));
+  return [...baseRows.filter((row) => !(importedBanks.has(row.bank) && row.status === "pending")), ...importedRows];
 }

@@ -4,7 +4,7 @@ import Image from "next/image";
 import { Plus, Search, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getBankInitials, getBankLogo } from "@/lib/bank-logos";
-import { formatRate, partners, RateRow } from "@/lib/rates";
+import { formatRate, RateRow } from "@/lib/rates";
 
 type RatesTableProps = {
   rows: RateRow[];
@@ -111,6 +111,7 @@ type CcfMatrixRow = {
 
 export function RatesTable({ rows }: RatesTableProps) {
   const [query, setQuery] = useState("");
+  const partners = useMemo(() => Array.from(new Set(rows.map((row) => row.bank))).sort(), [rows]);
   const [activeBank, setActiveBank] = useState(partners[0] || "");
   const [importStatus, setImportStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
   const [importMessage, setImportMessage] = useState("");

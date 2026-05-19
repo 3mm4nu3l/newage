@@ -3,50 +3,56 @@ import { prisma } from "@/lib/db";
 import { RateRow } from "@/lib/rates";
 
 export async function getImportedRateRows(): Promise<RateRow[]> {
-  const rules = await prisma.rateRule.findMany({
+  const latestSheets = await prisma.rateSheet.findMany({
     where: {
-      rateSheet: {
-        status: {
-          in: [RateSheetStatus.DRAFT, RateSheetStatus.VERIFIED],
-        },
+      status: {
+        in: [RateSheetStatus.DRAFT, RateSheetStatus.VERIFIED],
       },
     },
     include: {
-      rateSheet: {
-        include: {
-          bank: true,
-          tables: {
-            orderBy: {
-              order: "asc",
-            },
-          },
+      bank: true,
+      rules: true,
+      tables: {
+        orderBy: {
+          order: "asc",
         },
       },
     },
     orderBy: [
-      { rateSheet: { effectiveDate: "desc" } },
-      { durationMaxMonths: "asc" },
-      { baseRateBps: "asc" },
+      { effectiveDate: "desc" },
+      { updatedAt: "desc" },
     ],
   });
 
-  return rules.map((rule) => ({
+  const latestByBank = new Map<string, (typeof latestSheets)[number]>();
+
+  for (const sheet of latestSheets) {
+    if (!latestByBank.has(sheet.bankId)) {
+      latestByBank.set(sheet.bankId, sheet);
+    }
+  }
+
+  return Array.from(latestByBank.values()).flatMap((sheet) =>
+    sheet.rules
+      .sort((a, b) => (a.durationMaxMonths ?? 0) - (b.durationMaxMonths ?? 0) || a.baseRateBps - b.baseRateBps)
+      .map((rule) => ({
     id: `db-${rule.id}`,
-    bank: rule.rateSheet.bank.name,
-    region: rule.rateSheet.bank.region || "France",
-    scale: rule.rateSheet.title,
+    bank: sheet.bank.name,
+    region: sheet.bank.region || "France",
+    scale: sheet.title,
     customerType: formatCustomerType(rule.customerType),
     profile: rule.profileLabel || rule.label,
     durationLabel: readRawString(rule.rawCriteria, "durationLabel") || formatDuration(rule.durationMaxMonths),
     durationYears: rule.durationMaxMonths ? Math.round(rule.durationMaxMonths / 12) : 0,
     rate: rule.baseRateBps / 100,
     brokerBestRate: null,
-    sourceDate: rule.rateSheet.effectiveDate.toISOString().slice(0, 10),
-    sourceFile: rule.rateSheet.sourceFile,
-    status: rule.rateSheet.status === RateSheetStatus.VERIFIED ? "verified" : "review",
-    note: rule.rateSheet.status === RateSheetStatus.DRAFT ? "Brouillon importé par OCR Mistral, à relire avant publication." : undefined,
-    importedMarkdown: readImportedMarkdown(rule.rateSheet.tables),
-  }));
+    sourceDate: sheet.effectiveDate.toISOString().slice(0, 10),
+    sourceFile: sheet.sourceFile,
+    status: sheet.status === RateSheetStatus.VERIFIED ? "verified" : "review",
+    note: sheet.status === RateSheetStatus.DRAFT ? "Brouillon importé par OCR Mistral, à relire avant publication." : undefined,
+    importedMarkdown: readImportedMarkdown(sheet.tables),
+      })),
+  );
 }
 
 function readImportedMarkdown(tables: Array<{ payload: unknown }>) {

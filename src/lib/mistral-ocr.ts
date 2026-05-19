@@ -14,14 +14,20 @@ type MistralOcrResponse = {
 };
 
 export async function extractPdfMarkdownWithMistral(file: File) {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  return extractDataUrlMarkdownWithMistral(`data:${file.type || "application/pdf"};base64,${buffer.toString("base64")}`, "document_url");
+}
+
+export async function extractImageMarkdownWithMistral(buffer: Buffer, mimeType: string) {
+  return extractDataUrlMarkdownWithMistral(`data:${mimeType};base64,${buffer.toString("base64")}`, "image_url");
+}
+
+async function extractDataUrlMarkdownWithMistral(dataUrl: string, documentType: "document_url" | "image_url") {
   const apiKey = process.env.MISTRAL_API_KEY;
 
   if (!apiKey) {
     throw new Error("MISTRAL_API_KEY manquant dans les variables d'environnement.");
   }
-
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const dataUrl = `data:${file.type || "application/pdf"};base64,${buffer.toString("base64")}`;
 
   const response = await fetch("https://api.mistral.ai/v1/ocr", {
     method: "POST",
@@ -32,8 +38,8 @@ export async function extractPdfMarkdownWithMistral(file: File) {
     body: JSON.stringify({
       model: "mistral-ocr-latest",
       document: {
-        type: "document_url",
-        document_url: dataUrl,
+        type: documentType,
+        [documentType]: dataUrl,
       },
       table_format: "markdown",
       extract_header: true,

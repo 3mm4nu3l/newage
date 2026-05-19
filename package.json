@@ -22,13 +22,15 @@
     "pg": "^8.20.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "word-extractor": "^1.0.4"
+    "word-extractor": "^1.0.4",
+    "yauzl": "^3.3.0"
   },
   "devDependencies": {
     "@types/node": "25.8.0",
     "@types/pg": "^8.20.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "@types/yauzl": "^2.10.3",
     "prisma": "^7.8.0",
     "tsx": "^4.22.0",
     "typescript": "6.0.3"

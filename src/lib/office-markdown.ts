@@ -1,4 +1,6 @@
 import mammoth from "mammoth";
+import yauzl from "yauzl";
+import { extractImageMarkdownWithMistral } from "@/lib/mistral-ocr";
 
 type WordExtractorModule = {
   default?: new () => {
@@ -20,8 +22,26 @@ export async function extractOfficeMarkdown(file: File) {
 
   if (file.type === docxMime || name.endsWith(".docx")) {
     const result = await mammoth.convertToHtml({ buffer });
+    const markdown = htmlToMarkdown(result.value);
+
+    if (markdown.trim()) {
+      return {
+        markdown,
+        model: "mammoth-docx",
+        rawResponse: {
+          messages: result.messages,
+        },
+      };
+    }
+
+    const imageOcr = await extractImageOnlyDocxMarkdown(buffer);
+
+    if (imageOcr) {
+      return imageOcr;
+    }
+
     return {
-      markdown: htmlToMarkdown(result.value),
+      markdown,
       model: "mammoth-docx",
       rawResponse: {
         messages: result.messages,
@@ -45,6 +65,83 @@ export async function extractOfficeMarkdown(file: File) {
       mode: "legacy-doc-text",
     },
   };
+}
+
+async function extractImageOnlyDocxMarkdown(buffer: Buffer) {
+  const images = await extractDocxImages(buffer);
+  const image = images[0];
+
+  if (!image) {
+    return null;
+  }
+
+  const ocr = await extractImageMarkdownWithMistral(image.buffer, image.mimeType);
+
+  return {
+    markdown: ocr.markdown,
+    model: `mammoth-docx+${ocr.model}`,
+    rawResponse: {
+      imageCount: images.length,
+      imageName: image.name,
+      ocr: ocr.rawResponse,
+    },
+  };
+}
+
+function extractDocxImages(buffer: Buffer) {
+  return new Promise<Array<{ name: string; mimeType: string; buffer: Buffer }>>((resolve, reject) => {
+    yauzl.fromBuffer(buffer, { lazyEntries: true }, (error, zip) => {
+      if (error || !zip) {
+        reject(error);
+        return;
+      }
+
+      const images: Array<{ name: string; mimeType: string; buffer: Buffer }> = [];
+
+      zip.readEntry();
+      zip.on("entry", (entry) => {
+        if (!entry.fileName.startsWith("word/media/")) {
+          zip.readEntry();
+          return;
+        }
+
+        zip.openReadStream(entry, (streamError, stream) => {
+          if (streamError || !stream) {
+            reject(streamError);
+            return;
+          }
+
+          const chunks: Buffer[] = [];
+          stream.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+          stream.on("end", () => {
+            images.push({
+              name: entry.fileName,
+              mimeType: imageMimeType(entry.fileName),
+              buffer: Buffer.concat(chunks),
+            });
+            zip.readEntry();
+          });
+          stream.on("error", reject);
+        });
+      });
+      zip.on("end", () => resolve(images));
+      zip.on("error", reject);
+    });
+  });
+}
+
+function imageMimeType(fileName: string) {
+  const lower = fileName.toLowerCase();
+
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+
+  if (lower.endsWith(".webp")) {
+    return "image/webp";
+  }
+
+  return "image/png";
 }
 
 function htmlToMarkdown(html: string) {

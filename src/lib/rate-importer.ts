@@ -159,16 +159,15 @@ function extractRateRulesFromMarkdown(markdown: string): ParsedRule[] {
       continue;
     }
 
-    const separatorIndex = rows.findIndex(isSeparatorRow);
     const tableRows = rows.filter((cells) => !isSeparatorRow(cells));
-    const headerCandidates = separatorIndex > 0 ? rows.slice(0, separatorIndex) : [rows[0]];
+    const firstRateRowIndex = tableRows.findIndex((cells) => cells.filter((cell) => parseRateBps(cell) !== null).length >= 2);
+    const headerCandidates = firstRateRowIndex > 0 ? tableRows.slice(0, firstRateRowIndex) : [tableRows[0]];
     const headerRows = headerCandidates.filter((cells) => cells.some((cell) => /durée|ans|mois|relais|taux|€/i.test(cell)));
-    const headers = mergeHeaders(headerRows.length ? headerRows : [tableRows[0]]);
-    const headerSet = new Set((headerRows.length ? headerRows : [tableRows[0]]).map((cells) => cells.join("\u0000")));
-    const bodyRows = tableRows.filter((cells) => !headerSet.has(cells.join("\u0000")));
+    const headers = mergeHeaders(headerRows.length ? headerRows : [headerCandidates[headerCandidates.length - 1] || tableRows[0]]);
+    const bodyRows = firstRateRowIndex >= 0 ? tableRows.slice(firstRateRowIndex) : tableRows.slice(1);
 
     for (const row of bodyRows) {
-      const profile = row[0] || "Profil non identifié";
+      const profile = row.slice(0, 3).filter(Boolean).join(" / ") || row[0] || "Profil non identifié";
 
       row.forEach((cell, index) => {
         const rateBps = parseRateBps(cell);

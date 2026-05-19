@@ -459,11 +459,12 @@ function parseMarkdownTables(markdown: string) {
       }
 
       const title = findTitleBeforeTable(markdown, block) || (blocks.length > 1 ? `Tableau ${index + 1}` : "");
-      const headers = lines.slice(0, separatorIndex).map(parseMarkdownCells);
-      const rows = lines
+      const rawHeaders = lines.slice(0, separatorIndex).map(parseMarkdownCells);
+      const rawRows = lines
         .slice(separatorIndex + 1)
         .map(parseMarkdownCells)
         .filter((row) => row.some(Boolean));
+      const { headers, rows } = normalizeImportedTable(rawHeaders, rawRows);
 
       return { title, headers, rows };
     })
@@ -471,28 +472,39 @@ function parseMarkdownTables(markdown: string) {
 }
 
 function extractMarkdownTableBlocks(markdown: string) {
-  const blocks: string[] = [];
-  let current: string[] = [];
+  return markdown
+    .split(/\n\s*\n/g)
+    .map((block) => block.trim())
+    .filter((block) => block.includes("| ---"));
+}
 
-  for (const line of markdown.split(/\r?\n/)) {
-    const trimmed = line.trim();
+function normalizeImportedTable(headers: string[][], rows: string[][]) {
+  const cleanRows = rows.filter((row) => !isRepeatedHeaderRow(row)).map((row) => row.map(cleanImportedCell));
 
-    if (trimmed.startsWith("|") || (current.length && trimmed && !trimmed.startsWith("#"))) {
-      current.push(line);
-      continue;
-    }
-
-    if (current.length) {
-      blocks.push(current.join("\n"));
-      current = [];
-    }
+  if (headers.length >= 2 && headers[0].filter(Boolean).length <= 1 && headers[1].some((cell) => /ans|mois|relais|taux/i.test(cell))) {
+    return {
+      headers: [headers[1].map(cleanImportedCell)],
+      rows: cleanRows,
+    };
   }
 
-  if (current.length) {
-    blocks.push(current.join("\n"));
-  }
+  return {
+    headers: headers.map((row) => row.map(cleanImportedCell)),
+    rows: cleanRows,
+  };
+}
 
-  return blocks.filter((block) => block.includes("| ---"));
+function isRepeatedHeaderRow(row: string[]) {
+  return row.some((cell) => /bareme standard|barème standard|solution projet|conditions tarifaires/i.test(cell)) && row.filter(Boolean).length <= 2;
+}
+
+function cleanImportedCell(value: string) {
+  return value
+    .replace(/APPR[ÉE]N[ÉE]E\s+LIVRAISON/gi, "Revenus 1 personne")
+    .replace(/APPR[ÉE]N[ÉE]E\s+PROCUREURS/gi, "Revenus 2 personnes et +")
+    .replace(/COURTS\s+NATURES\s+DE\s+PROJETS/gi, "Toutes natures de projets")
+    .replace(/€\s*(\d+\s*ans)/gi, "≤ $1")
+    .trim();
 }
 
 function normalizeMarkdownTableLines(table: string) {

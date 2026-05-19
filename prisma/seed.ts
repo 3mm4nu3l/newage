@@ -1,8 +1,9 @@
 import { CustomerType, LoanType, PrismaClient, RateSheetStatus } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { rateRows } from "../src/lib/rates";
+import { getDatabaseUrl } from "../src/lib/database-url";
 
-const adapter = new PrismaPg(process.env.DATABASE_URL ?? "postgresql://ezto:ezto@localhost:5432/ezto?schema=public");
+const adapter = new PrismaPg(getDatabaseUrl());
 const prisma = new PrismaClient({ adapter });
 
 const extraDraftSheets: Array<{

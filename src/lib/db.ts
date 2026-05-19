@@ -1,11 +1,12 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { getDatabaseUrl } from "@/lib/database-url";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
-const connectionString = process.env.DATABASE_URL ?? "postgresql://ezto:ezto@localhost:5432/ezto?schema=public";
+const connectionString = getDatabaseUrl();
 const adapter = new PrismaPg(connectionString);
 
 export const prisma =

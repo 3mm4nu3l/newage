@@ -146,11 +146,10 @@ export async function createRateSheetDraftFromMarkdown(input: {
 
 function extractRateRulesFromMarkdown(markdown: string): ParsedRule[] {
   const rules: ParsedRule[] = [];
-  const tables = markdown.match(/(?:^\|.*\|\s*$\n?)+/gm) || [];
+  const tables = extractMarkdownTableBlocks(markdown);
 
   for (const table of tables) {
-    const rows = table
-      .split(/\r?\n/)
+    const rows = normalizeMarkdownTableLines(table)
       .map((line) => line.trim())
       .filter((line) => line.startsWith("|") && line.endsWith("|"))
       .map(parseMarkdownCells)
@@ -160,9 +159,13 @@ function extractRateRulesFromMarkdown(markdown: string): ParsedRule[] {
       continue;
     }
 
-    const headerRows = rows.filter((cells) => cells.some((cell) => /durée|ans|mois|relais|taux/i.test(cell))).slice(0, 2);
-    const headers = mergeHeaders(headerRows.length ? headerRows : [rows[0]]);
-    const bodyRows = rows.filter((cells) => !isSeparatorRow(cells) && !headerRows.includes(cells)).slice(1);
+    const separatorIndex = rows.findIndex(isSeparatorRow);
+    const tableRows = rows.filter((cells) => !isSeparatorRow(cells));
+    const headerCandidates = separatorIndex > 0 ? rows.slice(0, separatorIndex) : [rows[0]];
+    const headerRows = headerCandidates.filter((cells) => cells.some((cell) => /durée|ans|mois|relais|taux|€/i.test(cell)));
+    const headers = mergeHeaders(headerRows.length ? headerRows : [tableRows[0]]);
+    const headerSet = new Set((headerRows.length ? headerRows : [tableRows[0]]).map((cells) => cells.join("\u0000")));
+    const bodyRows = tableRows.filter((cells) => !headerSet.has(cells.join("\u0000")));
 
     for (const row of bodyRows) {
       const profile = row[0] || "Profil non identifié";
@@ -192,6 +195,54 @@ function extractRateRulesFromMarkdown(markdown: string): ParsedRule[] {
   }
 
   return dedupeRules(rules).slice(0, 250);
+}
+
+function extractMarkdownTableBlocks(markdown: string) {
+  const blocks: string[] = [];
+  let current: string[] = [];
+
+  for (const line of markdown.split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("|") || (current.length && trimmed && !trimmed.startsWith("#"))) {
+      current.push(line);
+      continue;
+    }
+
+    if (current.length) {
+      blocks.push(current.join("\n"));
+      current = [];
+    }
+  }
+
+  if (current.length) {
+    blocks.push(current.join("\n"));
+  }
+
+  return blocks.filter((block) => block.includes("| ---"));
+}
+
+function normalizeMarkdownTableLines(table: string) {
+  const lines: string[] = [];
+
+  for (const line of table.split(/\r?\n/)) {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      continue;
+    }
+
+    if (trimmed.startsWith("|")) {
+      lines.push(trimmed);
+      continue;
+    }
+
+    if (lines.length) {
+      lines[lines.length - 1] = `${lines[lines.length - 1]} ${trimmed}`;
+    }
+  }
+
+  return lines;
 }
 
 function parseMarkdownCells(line: string) {

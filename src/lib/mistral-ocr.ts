@@ -1,6 +1,10 @@
 type MistralOcrPage = {
   index?: number;
   markdown?: string;
+  tables?: Array<{
+    id?: string;
+    content?: string;
+  }>;
 };
 
 type MistralOcrResponse = {
@@ -46,7 +50,7 @@ export async function extractPdfMarkdownWithMistral(file: File) {
   const payload = (await response.json()) as MistralOcrResponse;
   const markdown = (payload.pages || [])
     .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
-    .map((page) => page.markdown?.trim())
+    .map(pageToMarkdown)
     .filter(Boolean)
     .join("\n\n---\n\n");
 
@@ -59,4 +63,23 @@ export async function extractPdfMarkdownWithMistral(file: File) {
     model: payload.model || "mistral-ocr-latest",
     rawResponse: payload as Record<string, unknown>,
   };
+}
+
+function pageToMarkdown(page: MistralOcrPage) {
+  const pageMarkdown = page.markdown?.trim() || "";
+  const tableMarkdown = (page.tables || [])
+    .map((table) => table.content?.trim())
+    .filter(Boolean)
+    .join("\n\n");
+
+  if (!tableMarkdown) {
+    return pageMarkdown;
+  }
+
+  const onlyTableLinks = pageMarkdown
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .every((line) => /^\[[^\]]+\.md\]\([^)]+\.md\)$/.test(line.trim()));
+
+  return onlyTableLinks || !pageMarkdown ? tableMarkdown : `${pageMarkdown}\n\n${tableMarkdown}`;
 }

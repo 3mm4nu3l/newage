@@ -309,7 +309,11 @@ h2 {
 }
 
 .bank-tabs-toolbar {
+  align-items: center;
   border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0;
+  grid-template-columns: minmax(0, 1fr) 76px;
 }
 
 .filters {
@@ -434,6 +438,59 @@ label {
   align-items: center;
   display: flex;
   gap: 8px;
+}
+
+.rate-import-button {
+  align-items: center;
+  align-self: stretch;
+  background: var(--panel);
+  border: 0;
+  border-left: 1px solid var(--line);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 76px;
+  transition:
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.rate-import-button:hover {
+  background: var(--panel-soft);
+  color: var(--accent);
+}
+
+.rate-import-button:disabled {
+  color: var(--muted);
+  cursor: wait;
+}
+
+.rate-import-status {
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 10px 16px;
+}
+
+.rate-import-status.success {
+  color: oklch(78% 0.13 155);
+}
+
+.rate-import-status.error {
+  color: oklch(74% 0.18 28);
+}
+
+.sr-only {
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  width: 1px;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 
 input,

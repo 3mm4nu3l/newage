@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Search, SlidersHorizontal } from "lucide-react";
+import { Plus, Search, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getBankInitials, getBankLogo } from "@/lib/bank-logos";
 import { formatRate, partners, RateRow } from "@/lib/rates";
@@ -112,12 +112,15 @@ type CcfMatrixRow = {
 export function RatesTable({ rows }: RatesTableProps) {
   const [query, setQuery] = useState("");
   const [activeBank, setActiveBank] = useState(partners[0] || "");
+  const [importStatus, setImportStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
+  const [importMessage, setImportMessage] = useState("");
   const [activeBprpTab, setActiveBprpTab] = useState<BprpTapKey>("tapLt20");
   const [activePalatineTab, setActivePalatineTab] = useState<PalatineScaleKey>("patrimoniale");
   const [activeCeidfTab, setActiveCeidfTab] = useState<CeidfCustomerKey>("prospect");
   const bankTabsRef = useRef<HTMLDivElement>(null);
   const [bankTabsScroll, setBankTabsScroll] = useState(0);
   const [bankTabsMaxScroll, setBankTabsMaxScroll] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const bankTabs = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -230,6 +233,40 @@ export function RatesTable({ rows }: RatesTableProps) {
       ? `${ccfRows.length} tranches pour ${selectedBank}`
       : `${selectedRows.length} lignes pour ${selectedBank}`;
 
+  const handleRateImport = async (file: File | undefined) => {
+    if (!file) {
+      return;
+    }
+
+    setImportStatus("uploading");
+    setImportMessage(`Extraction de ${file.name} en cours...`);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch("/api/rate-imports", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = (await response.json().catch(() => null)) as { ok?: boolean; message?: string; bankName?: string; extractedRules?: number } | null;
+
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.message || "Import impossible.");
+      }
+
+      setImportStatus("success");
+      setImportMessage(payload.message || `Brouillon créé pour ${payload.bankName}.`);
+    } catch (error) {
+      setImportStatus("error");
+      setImportMessage(error instanceof Error ? error.message : "Import impossible.");
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
   return (
     <div className="rates-workspace">
       <div className="bank-tabs-toolbar">
@@ -242,7 +279,27 @@ export function RatesTable({ rows }: RatesTableProps) {
             type="search"
           />
         </label>
+        <input
+          ref={fileInputRef}
+          className="sr-only"
+          type="file"
+          accept="application/pdf,.pdf"
+          onChange={(event) => {
+            void handleRateImport(event.target.files?.[0]);
+          }}
+        />
+        <button
+          className="rate-import-button"
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={importStatus === "uploading"}
+          title="Importer un barème PDF"
+          aria-label="Importer un barème PDF"
+        >
+          <Plus size={20} aria-hidden="true" />
+        </button>
       </div>
+      {importMessage ? <div className={`rate-import-status ${importStatus}`}>{importMessage}</div> : null}
 
       <div className="bank-tabs-shell">
         <div

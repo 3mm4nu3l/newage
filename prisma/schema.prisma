@@ -83,6 +83,12 @@ enum ConfidenceLevel {
   HIGH
 }
 
+enum RateImportStatus {
+  PROCESSING
+  DRAFT_CREATED
+  FAILED
+}
+
 model Bank {
   id            String         @id @default(cuid())
   slug          String         @unique
@@ -121,11 +127,33 @@ model RateSheet {
   adjustments   RateAdjustment[]
   bank          Bank               @relation(fields: [bankId], references: [id], onDelete: Cascade)
   eligibility   EligibilityRule[]
+  imports       RateImport[]
   rules         RateRule[]
   tables        RateDisplayBlock[]
 
   @@unique([bankId, month, title])
   @@index([bankId, effectiveDate])
+}
+
+model RateImport {
+  id             String           @id @default(cuid())
+  rateSheetId    String?
+  fileName       String
+  fileSize       Int
+  mimeType       String
+  provider       String           @default("mistral")
+  providerModel  String           @default("mistral-ocr-latest")
+  status         RateImportStatus @default(PROCESSING)
+  markdown       String?
+  extractedRules Int              @default(0)
+  errorMessage   String?
+  rawResponse    Json?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  rateSheet      RateSheet?       @relation(fields: [rateSheetId], references: [id], onDelete: SetNull)
+
+  @@index([rateSheetId])
+  @@index([createdAt])
 }
 
 model RateRule {

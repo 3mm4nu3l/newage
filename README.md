@@ -22,6 +22,7 @@ Copier `.env.example` vers `.env`, puis renseigner :
 - `TWILIO_ACCOUNT_SID`
 - `TWILIO_AUTH_TOKEN`
 - `TWILIO_VERIFY_SERVICE_SID`
+- `MISTRAL_API_KEY` pour l'extraction OCR des PDF de baremes.
 - `LEAD_TOKEN_SECRET`
 - `TWENTY_INTAKE_WEBHOOK_URL` pour le MVP, ou `TWENTY_API_BASE_URL` + `TWENTY_API_KEY` pour l'API directe.
 
@@ -50,6 +51,7 @@ Tables principales :
 - `RateRule` : taux de base selon duree, revenus, DPE, type de projet, apport/TAP.
 - `RateAdjustment` : bonifications, decotes et majorations.
 - `EligibilityRule` : conditions bloquantes ou d'octroi.
+- `RateImport` : depot PDF, Markdown OCR Mistral, statut et nombre de taux detectes.
 - `AchievedRate` : historique des taux obtenus par les courtiers avec duree, profil et apport.
 
 Le moteur `src/lib/rate-engine.ts` compare le bareme applicable avec les historiques terrain. L'endpoint `POST /api/rates/recommendations` est pret pour recevoir un profil client et retourner les banques les plus pertinentes.

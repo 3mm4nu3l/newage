@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RateSheetStatus {
+  DRAFT
+  VERIFIED
+  ARCHIVED
+}
+
+enum CustomerType {
+  PROSPECT
+  CLIENT
+  ALL
+}
+
+enum ProjectType {
+  RP
+  RS
+  RL
+  LMNP
+  BRS
+  PSLA
+  CONSTRUCTION
+  WORKS
+  OTHER
+}
+
+enum LoanType {
+  AMORTIZING
+  IN_FINE
+  BRIDGE_TOTAL
+  BRIDGE_PARTIAL
+  VARIABLE
+  TVA_ADVANCE
+  OTHER
+}
+
+enum BorrowerType {
+  SINGLE
+  COUPLE
+  SCI
+  OTHER
+}
+
+enum DpeGroup {
+  A_B
+  A_B_C_D_NEW
+  A_B_C
+  A_TO_D
+  E_F_G_NONE
+  ANY
+}
+
+enum AdjustmentKind {
+  DISCOUNT
+  SURCHARGE
+}
+
+enum ConditionOperator {
+  EQ
+  IN
+  GTE
+  LTE
+  RANGE
+  BOOLEAN
+}
+
+enum AchievedRateSource {
+  BROKER_DECLARATION
+  BANK_OFFER
+  CRM_DEAL
+  MANUAL_IMPORT
+}
+
+enum ConfidenceLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Bank {
+  id            String         @id @default(cuid())
+  slug          String         @unique
+  name          String
+  region        String?
+  logoPath      String?
+  isActive      Boolean        @default(true)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  achievedRates AchievedRate[]
+  rateSheets    RateSheet[]
+}
+
+model Broker {
+  id            String         @id @default(cuid())
+  name          String
+  email         String?        @unique
+  crmUserId     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  achievedRates AchievedRate[]
+}
+
+model RateSheet {
+  id            String             @id @default(cuid())
+  bankId        String
+  title         String
+  month         String
+  effectiveDate DateTime
+  sourceFile    String
+  sourcePath    String?
+  status        RateSheetStatus    @default(DRAFT)
+  notes         String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  adjustments   RateAdjustment[]
+  bank          Bank               @relation(fields: [bankId], references: [id], onDelete: Cascade)
+  eligibility   EligibilityRule[]
+  rules         RateRule[]
+  tables        RateDisplayBlock[]
+
+  @@unique([bankId, month, title])
+  @@index([bankId, effectiveDate])
+}
+
+model RateRule {
+  id                   String        @id @default(cuid())
+  rateSheetId          String
+  label                String
+  profileLabel         String?
+  customerType         CustomerType  @default(ALL)
+  projectType          ProjectType?
+  loanType             LoanType      @default(AMORTIZING)
+  borrowerType         BorrowerType?
+  durationMinMonths    Int?
+  durationMaxMonths    Int?
+  incomeMinSingleCents Int?
+  incomeMaxSingleCents Int?
+  incomeMinCoupleCents Int?
+  incomeMaxCoupleCents Int?
+  contributionMinBps   Int?
+  contributionMaxBps   Int?
+  dpeGroup             DpeGroup      @default(ANY)
+  tapMinBps            Int?
+  tapMaxBps            Int?
+  amountMinCents       Int?
+  amountMaxCents       Int?
+  baseRateBps          Int
+  priority             Int           @default(100)
+  rawCriteria          Json?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  rateSheet            RateSheet     @relation(fields: [rateSheetId], references: [id], onDelete: Cascade)
+
+  @@index([rateSheetId, customerType, loanType])
+  @@index([durationMinMonths, durationMaxMonths])
+  @@index([incomeMinSingleCents, incomeMaxSingleCents])
+  @@index([incomeMinCoupleCents, incomeMaxCoupleCents])
+}
+
+model RateAdjustment {
+  id            String            @id @default(cuid())
+  rateSheetId   String
+  label         String
+  kind          AdjustmentKind
+  adjustmentBps Int
+  conditionKey  String
+  operator      ConditionOperator @default(EQ)
+  value         Json
+  priority      Int               @default(100)
+  isStackable   Boolean           @default(true)
+  notes         String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  rateSheet     RateSheet         @relation(fields: [rateSheetId], references: [id], onDelete: Cascade)
+
+  @@index([rateSheetId, conditionKey])
+}
+
+model EligibilityRule {
+  id           String            @id @default(cuid())
+  rateSheetId  String
+  label        String
+  conditionKey String
+  operator     ConditionOperator @default(EQ)
+  value        Json
+  isBlocking   Boolean           @default(true)
+  message      String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  rateSheet    RateSheet         @relation(fields: [rateSheetId], references: [id], onDelete: Cascade)
+
+  @@index([rateSheetId, conditionKey])
+}
+
+model RateDisplayBlock {
+  id          String    @id @default(cuid())
+  rateSheetId String
+  order       Int
+  kind        String
+  title       String
+  payload     Json
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  rateSheet   RateSheet @relation(fields: [rateSheetId], references: [id], onDelete: Cascade)
+
+  @@index([rateSheetId, order])
+}
+
+model AchievedRate {
+  id                      String             @id @default(cuid())
+  bankId                  String
+  brokerId                String?
+  crmDealId               String?
+  achievedAt              DateTime
+  rateObtainedBps         Int
+  loanDurationMonths      Int
+  loanAmountCents         Int?
+  projectAmountCents      Int?
+  contributionAmountCents Int?
+  contributionBps         Int?
+  projectType             ProjectType?
+  loanType                LoanType           @default(AMORTIZING)
+  customerType            CustomerType       @default(ALL)
+  borrowerType            BorrowerType?
+  borrowerProfileLabel    String?
+  incomeTotalCents        Int?
+  incomeBandLabel         String?
+  borrowerCount           Int?
+  ageMin                  Int?
+  ageMax                  Int?
+  dpeGroup                DpeGroup           @default(ANY)
+  region                  String?
+  professionalStatus      String?
+  sourceType              AchievedRateSource @default(BROKER_DECLARATION)
+  confidenceLevel         ConfidenceLevel    @default(MEDIUM)
+  notes                   String?
+  rawPayload              Json?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  bank                    Bank               @relation(fields: [bankId], references: [id], onDelete: Cascade)
+  broker                  Broker?            @relation(fields: [brokerId], references: [id], onDelete: SetNull)
+
+  @@index([bankId, achievedAt])
+  @@index([bankId, loanDurationMonths, contributionBps])
+  @@index([projectType, loanType, customerType])
+  @@index([incomeTotalCents, dpeGroup])
+}

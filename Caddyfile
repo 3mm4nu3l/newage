@@ -1,0 +1,3 @@
+ezto.fr, www.ezto.fr {
+  reverse_proxy ezto-site:3000
+}

@@ -37,7 +37,7 @@ export async function createRateSheetDraftFromMarkdown(input: {
 
   try {
     const bankName = inferBankName(input.markdown, input.fileName);
-    const effectiveDate = inferEffectiveDate(input.markdown);
+    const effectiveDate = inferEffectiveDate(input.markdown, input.fileName);
     const title = inferTitle(input.markdown, input.fileName);
     const month = effectiveDate.toISOString().slice(0, 7);
 
@@ -46,9 +46,13 @@ export async function createRateSheetDraftFromMarkdown(input: {
       create: {
         name: bankName,
         slug: slugify(bankName),
+        region: inferBankRegion(bankName),
+        logoPath: getLogoPath(bankName),
       },
       update: {
         name: bankName,
+        region: inferBankRegion(bankName),
+        logoPath: getLogoPath(bankName),
         isActive: true,
       },
     });
@@ -328,7 +332,21 @@ function dedupeRules(rules: ParsedRule[]) {
 
 function inferBankName(markdown: string, fileName: string) {
   const source = `${fileName}\n${markdown.slice(0, 1500)}`;
+  const normalized = normalize(source);
+
+  if (normalized.includes("societe generale")) {
+    if (normalized.includes("province")) {
+      return "Société Générale Province";
+    }
+
+    if (normalized.includes("idf") || normalized.includes("ile de france") || normalized.includes("ile-de-france")) {
+      return "Société Générale IDF";
+    }
+  }
+
   const knownBanks = [
+    "Société Générale Province",
+    "Société Générale IDF",
     "Société Générale",
     "Banque Populaire Rives de Paris",
     "Banque Populaire Val de France",
@@ -347,7 +365,6 @@ function inferBankName(markdown: string, fileName: string) {
     "BCP",
     "LCL",
   ];
-  const normalized = normalize(source);
   const match = knownBanks.find((bank) => normalized.includes(normalize(bank)));
 
   if (match) {
@@ -359,11 +376,42 @@ function inferBankName(markdown: string, fileName: string) {
 }
 
 function inferTitle(markdown: string, fileName: string) {
+  const fileTitle = fileName.replace(/\.[^.]+$/, "").trim();
+
+  if (/bar[eè]me|bareme/i.test(fileTitle)) {
+    return fileTitle;
+  }
+
   return markdown.match(/^#\s+(.+)$/m)?.[1]?.trim() || fileName.replace(/\.[^.]+$/, "");
 }
 
-function inferEffectiveDate(markdown: string) {
-  const text = markdown.slice(0, 3000);
+function inferBankRegion(bankName: string) {
+  const normalized = normalize(bankName);
+
+  if (normalized.includes("idf")) {
+    return "IDF";
+  }
+
+  if (normalized.includes("province")) {
+    return "Province";
+  }
+
+  return undefined;
+}
+
+function getLogoPath(bankName: string) {
+  const normalized = normalize(bankName);
+
+  if (normalized.includes("societe generale")) {
+    return "/banks/societe_generale_square.png";
+  }
+
+  return null;
+}
+
+function inferEffectiveDate(markdown: string, fileName = "") {
+  const source = `${fileName}\n${markdown.slice(0, 3000)}`;
+  const text = source;
   const numeric = text.match(/(\d{1,2})[/-](\d{1,2})[/-](20\d{2})/);
 
   if (numeric) {

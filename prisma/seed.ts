@@ -167,6 +167,8 @@ function getLogoPath(bank: string) {
     LCL: "/banks/lcl_circle_prismic_v2.png",
     Palatine: "/banks/palatine_square.png",
     "Société Générale": "/banks/societe_generale_square.png",
+    "Société Générale IDF": "/banks/societe_generale_square.png",
+    "Société Générale Province": "/banks/societe_generale_square.png",
   };
 
   return logos[bank] ?? null;

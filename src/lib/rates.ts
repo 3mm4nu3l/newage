@@ -178,7 +178,7 @@ function createCcfRows(): RateRow[] {
 
 function createSocieteGeneraleRows(): RateRow[] {
   const source = {
-    bank: "Société Générale",
+    bank: "Société Générale IDF",
     region: "IDF",
     scale: "Barème prescripteur IDF, taux nominaux",
     customerType: "Prospect",

@@ -1,13 +1,97 @@
 "use client";
 
 import Image from "next/image";
-import { Plus, Search, SlidersHorizontal } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Calculator, Loader2, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { getBankInitials, getBankLogo } from "@/lib/bank-logos";
 import { formatRate, RateRow } from "@/lib/rates";
 
 type RatesTableProps = {
   rows: RateRow[];
+};
+
+type IncomeLine = {
+  id: string;
+  label: string;
+  amount: string;
+  period: "monthly" | "annual";
+};
+
+type ChargeLine = {
+  id: string;
+  label: string;
+  amount: string;
+};
+
+const incomeLabels = [
+  "Salaire net",
+  "Revenu TNS",
+  "Revenus locatifs",
+  "AL/APL",
+  "Allocations familiales",
+  "Autre revenus/allocation diverses",
+  "Dividendes",
+  "Montant des primes",
+  "Pension alimentaire reÃ§ue",
+  "Pension de reversion",
+  "Pension ou retraite",
+];
+
+const chargeLabels = [
+  "Credit consommation",
+  "Credit voiture amortissable",
+  "Credit voiture LDD",
+  "Credit voiture LOA",
+  "Investissement locatif",
+  "Loyer actuel",
+  "Pension alimentaire",
+  "Reserve d'argent",
+  "Residence principale",
+  "Residence secondaire",
+  "Terrain",
+];
+
+type RecommendationResult = {
+  bankName: string;
+  logoPath: string | null;
+  profileLabel: string | null;
+  sheetTitle: string;
+  sourceFile: string;
+  rate: number;
+  baseRate: number;
+  rateType: "fixed" | "variable";
+  monthlyPayment: number;
+  totalInterest: number;
+  durationYears: number;
+  financedAmount: number;
+  simulation: {
+    monthlyCredit: number;
+    monthlyInsurance: number;
+    totalMonthlyPayment: number;
+    monthlyIncome: number;
+    monthlyCharges: number;
+    debtRatio: number | null;
+    remainingIncome: number;
+    totalInterest: number;
+    totalInsurance: number;
+    brokerageFee: number;
+    bankFee: number;
+    creditLogementFee: number;
+    totalFees: number;
+    totalCost: number;
+    insurance: {
+      label: string;
+      minRate: number;
+      maxRate: number;
+      averageRate: number;
+    };
+    insuranceCoverageRate: number;
+  };
+  achieved: {
+    bestRate: number | null;
+    averageRate: number | null;
+    count: number;
+  };
 };
 
 type PostalMatrixRow = {
@@ -118,10 +202,26 @@ export function RatesTable({ rows }: RatesTableProps) {
   const [activeBprpTab, setActiveBprpTab] = useState<BprpTapKey>("tapLt20");
   const [activePalatineTab, setActivePalatineTab] = useState<PalatineScaleKey>("patrimoniale");
   const [activeCeidfTab, setActiveCeidfTab] = useState<CeidfCustomerKey>("prospect");
-  const bankTabsRef = useRef<HTMLDivElement>(null);
-  const [bankTabsScroll, setBankTabsScroll] = useState(0);
-  const [bankTabsMaxScroll, setBankTabsMaxScroll] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [projectAmount, setProjectAmount] = useState("300000");
+  const [contributionAmount, setContributionAmount] = useState("30000");
+  const [activeBudgetTab, setActiveBudgetTab] = useState<"income" | "charges">("income");
+  const [incomeLines, setIncomeLines] = useState<IncomeLine[]>([
+    { id: "income-1", label: "Salaire net", amount: "4500", period: "monthly" },
+  ]);
+  const [chargeLines, setChargeLines] = useState<ChargeLine[]>([
+    { id: "charge-1", label: "Credit consommation", amount: "" },
+  ]);
+  const [borrowerCount, setBorrowerCount] = useState("2");
+  const [age, setAge] = useState("35");
+  const [durationYears, setDurationYears] = useState("25");
+  const [dpeGroup, setDpeGroup] = useState("ANY");
+  const [rateType, setRateType] = useState<"fixed" | "variable" | "both">("fixed");
+  const [recommendationStatus, setRecommendationStatus] = useState<"idle" | "loading" | "adjusting" | "success" | "error">("idle");
+  const [recommendationMessage, setRecommendationMessage] = useState("");
+  const [recommendations, setRecommendations] = useState<RecommendationResult[]>([]);
+  const [highlightedRecommendation, setHighlightedRecommendation] = useState<{ bankName: string; rate: number } | null>(null);
+  const ratesContentRef = useRef<HTMLDivElement>(null);
 
   const bankTabs = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -140,25 +240,9 @@ export function RatesTable({ rows }: RatesTableProps) {
   }, [query, rows]);
 
   const selectedBank = bankTabs.includes(activeBank) ? activeBank : bankTabs[0] || activeBank;
-  const bankTabsPages = Math.max(1, Math.ceil(bankTabs.length / 8));
-  const activeBankTabsPage = bankTabsMaxScroll ? Math.round((bankTabsScroll / bankTabsMaxScroll) * (bankTabsPages - 1)) : 0;
-  const updateBankTabsScroll = useCallback(() => {
-    const node = bankTabsRef.current;
-
-    if (!node) {
-      return;
-    }
-
-    setBankTabsScroll(node.scrollLeft);
-    setBankTabsMaxScroll(Math.max(0, node.scrollWidth - node.clientWidth));
-  }, []);
-
-  useEffect(() => {
-    updateBankTabsScroll();
-
-    window.addEventListener("resize", updateBankTabsScroll);
-    return () => window.removeEventListener("resize", updateBankTabsScroll);
-  }, [bankTabs.length, updateBankTabsScroll]);
+  const annualIncome = useMemo(() => calculateAnnualIncome(incomeLines), [incomeLines]);
+  const monthlyIncome = useMemo(() => Math.round(annualIncome / 12), [annualIncome]);
+  const monthlyCharges = useMemo(() => calculateMonthlyCharges(chargeLines), [chargeLines]);
 
   const selectedRows = useMemo(() => {
     return rows
@@ -173,7 +257,7 @@ export function RatesTable({ rows }: RatesTableProps) {
   }, [rows, selectedBank]);
   const importedMarkdown = selectedRows.find((row) => row.importedMarkdown)?.importedMarkdown;
 
-  const isSocieteGeneraleBank = selectedBank === "Société Générale";
+  const isSocieteGeneraleBank = selectedBank === "Société Générale" || selectedBank.startsWith("Société Générale ");
   const isBprpBank = selectedBank === "Banque Populaire Rives de Paris";
   const isBpvfBank = selectedBank === "Banque Populaire Val de France";
   const isBnpBank = selectedBank === "BNP Paribas" || selectedBank === "Hello bank!";
@@ -269,15 +353,235 @@ export function RatesTable({ rows }: RatesTableProps) {
     }
   };
 
+  const fetchRecommendations = async (nextProjectAmount = projectAmount) => {
+    const response = await fetch("/api/rates/recommendations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        projectAmount: nextProjectAmount,
+        contributionAmount,
+        income: annualIncome,
+        borrowerCount: parseFrenchNumber(borrowerCount),
+        borrowerType: borrowerCount === "1" ? "SINGLE" : "COUPLE",
+        customerType: "PROSPECT",
+        loanType: "AMORTIZING",
+        dpeGroup,
+        duration: durationYears,
+        criteria: {
+          age: parseFrenchNumber(age),
+          rateType,
+          annualCharges: monthlyCharges * 12,
+        },
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as { ok?: boolean; message?: string; recommendations?: RecommendationResult[] } | null;
+
+    if (!response.ok || !payload?.ok) {
+      throw new Error(payload?.message || "Simulation impossible.");
+    }
+
+    return (payload.recommendations ?? []).slice(0, 3);
+  };
+
+  const applyRecommendations = (nextRecommendations: RecommendationResult[]) => {
+    setRecommendations(nextRecommendations);
+    setRecommendationStatus("success");
+    setRecommendationMessage(nextRecommendations.length ? "" : "Aucune proposition compatible trouvee avec ces criteres.");
+  };
+
+  const handleRecommendationSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setRecommendationStatus("loading");
+    setRecommendationMessage("");
+
+    try {
+      applyRecommendations(await fetchRecommendations());
+    } catch (error) {
+      setRecommendations([]);
+      setRecommendationStatus("error");
+      setRecommendationMessage(error instanceof Error ? error.message : "Simulation impossible.");
+    }
+  };
+
+  const handleAdjustPurchaseAmount = async () => {
+    const targetDebtRatio = 35;
+    const income = monthlyIncome;
+    const contribution = parseFrenchNumber(contributionAmount);
+
+    if (income <= 0) {
+      setRecommendations([]);
+      setRecommendationStatus("error");
+      setRecommendationMessage("Ajoute au moins un revenu pour calculer un achat a 35 % d'endettement.");
+      return;
+    }
+
+    setRecommendationStatus("adjusting");
+    setRecommendationMessage("");
+
+    try {
+      const readDebtRatio = async (amount: number) => {
+        const nextRecommendations = await fetchRecommendations(String(Math.round(amount)));
+        return {
+          recommendations: nextRecommendations,
+          debtRatio: nextRecommendations[0]?.simulation.debtRatio ?? Number.POSITIVE_INFINITY,
+        };
+      };
+
+      let low = Math.max(contribution, 0);
+      let high = Math.max(parseFrenchNumber(projectAmount), contribution + 10000);
+      let highResult = await readDebtRatio(high);
+
+      for (let step = 0; highResult.debtRatio <= targetDebtRatio && step < 12; step += 1) {
+        low = high;
+        high *= 1.25;
+        highResult = await readDebtRatio(high);
+      }
+
+      let bestAmount = low;
+      let bestRecommendations = (await readDebtRatio(low)).recommendations;
+
+      for (let step = 0; step < 18; step += 1) {
+        const mid = (low + high) / 2;
+        const result = await readDebtRatio(mid);
+
+        if (result.debtRatio <= targetDebtRatio) {
+          bestAmount = mid;
+          bestRecommendations = result.recommendations;
+          low = mid;
+        } else {
+          high = mid;
+        }
+      }
+
+      const adjustedAmount = Math.round(bestAmount / 1000) * 1000;
+      setProjectAmount(String(adjustedAmount));
+      const finalRecommendations = await fetchRecommendations(String(adjustedAmount));
+      applyRecommendations(finalRecommendations.length ? finalRecommendations : bestRecommendations);
+      setRecommendationMessage(`Montant d'achat ajuste a ${formatEuro(adjustedAmount)} pour viser 35 % d'endettement.`);
+    } catch (error) {
+      setRecommendations([]);
+      setRecommendationStatus("error");
+      setRecommendationMessage(error instanceof Error ? error.message : "Ajustement impossible.");
+    }
+  };
+
+  const updateIncomeLine = (id: string, nextLine: Partial<IncomeLine>) => {
+    setIncomeLines((currentLines) => currentLines.map((line) => (line.id === id ? { ...line, ...nextLine } : line)));
+  };
+
+  const addIncomeLine = () => {
+    setIncomeLines((currentLines) => [
+      ...currentLines,
+      {
+        id: `income-${Date.now()}`,
+        label: "Salaire net",
+        amount: "",
+        period: "monthly",
+      },
+    ]);
+  };
+
+  const removeIncomeLine = (id: string) => {
+    setIncomeLines((currentLines) => (currentLines.length > 1 ? currentLines.filter((line) => line.id !== id) : currentLines));
+  };
+
+  const updateChargeLine = (id: string, nextLine: Partial<ChargeLine>) => {
+    setChargeLines((currentLines) => currentLines.map((line) => (line.id === id ? { ...line, ...nextLine } : line)));
+  };
+
+  const addChargeLine = () => {
+    setChargeLines((currentLines) => [
+      ...currentLines,
+      {
+        id: `charge-${Date.now()}`,
+        label: "Credit consommation",
+        amount: "",
+      },
+    ]);
+  };
+
+  const removeChargeLine = (id: string) => {
+    setChargeLines((currentLines) => (currentLines.length > 1 ? currentLines.filter((line) => line.id !== id) : currentLines));
+  };
+
+  const rateTable = isSocieteGeneraleBank ? (
+    <SgRateTable rows={sgRows} />
+  ) : importedMarkdown ? (
+    <ImportedMarkdownRateTable bank={selectedBank} markdown={importedMarkdown} rows={selectedRows} />
+  ) : isBprpBank ? (
+    <BprpRateTable activeTab={activeBprpTab} onTabChange={setActiveBprpTab} rows={bprpRows} />
+  ) : isBpvfBank ? (
+    <BpvfRateTable rows={selectedRows} />
+  ) : isBnpBank ? (
+    <BnpRateTable bank={selectedBank} rows={bnpRows} />
+  ) : isBpbfcBank ? (
+    <BpbfcRateTable tables={bpbfcTables} />
+  ) : isBredBank ? (
+    <BredRateTable rows={bredRows} />
+  ) : isBcpBank ? (
+    <BcpRateTable rows={bcpRows} />
+  ) : isCeidfBank ? (
+    <CeidfRateTable activeTab={activeCeidfTab} onTabChange={setActiveCeidfTab} rows={ceidfRows} />
+  ) : isCaidfBank ? (
+    <CaidfRateTable rows={caidfRows} />
+  ) : isCabpBank ? (
+    <CabpRateTable tables={cabpTables} />
+  ) : isCasraBank ? (
+    <CasraRateTable tables={casraTables} />
+  ) : isFortuneoBank ? (
+    <FortuneoRateTable rows={fortuneoRows} />
+  ) : isPalatineBank ? (
+    <PalatineRateTable activeTab={activePalatineTab} onTabChange={setActivePalatineTab} rows={palatineRows} />
+  ) : isPostalBank ? (
+    <PostalRateTable rows={postalRows} />
+  ) : isCcfBank ? (
+    <CcfRateTable rows={ccfRows} />
+  ) : (
+    <DefaultRateTable rows={selectedRows} />
+  );
+
+  useEffect(() => {
+    const content = ratesContentRef.current;
+
+    if (!content) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const cells = Array.from(content.querySelectorAll<HTMLElement>(".rates-table-body .rate-cell"));
+
+      for (const cell of cells) {
+        cell.classList.remove("selected-rate-cell");
+      }
+
+      if (!highlightedRecommendation || highlightedRecommendation.bankName !== selectedBank) {
+        return;
+      }
+
+      const selectedRate = formatPercent(highlightedRecommendation.rate);
+
+      for (const cell of cells) {
+        if (cell.textContent?.trim() === selectedRate) {
+          cell.classList.add("selected-rate-cell");
+        }
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [highlightedRecommendation, selectedBank, rateTable]);
+
   return (
-    <div className="rates-workspace">
+    <div className="rates-workspace" ref={ratesContentRef}>
+      <aside className="rates-sidebar" aria-label="Banques partenaires">
       <div className="bank-tabs-toolbar">
         <label className="search-field">
           <Search size={17} aria-hidden="true" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Rechercher une banque ou un profil..."
+            placeholder="Rechercher..."
             type="search"
           />
         </label>
@@ -306,8 +610,6 @@ export function RatesTable({ rows }: RatesTableProps) {
       <div className="bank-tabs-shell">
         <div
           className="bank-tabs"
-          onScroll={updateBankTabsScroll}
-          ref={bankTabsRef}
           role="tablist"
           aria-label="Banques partenaires"
         >
@@ -319,7 +621,7 @@ export function RatesTable({ rows }: RatesTableProps) {
               key={bank}
               onClick={() => {
                 setActiveBank(bank);
-                window.requestAnimationFrame(updateBankTabsScroll);
+                setHighlightedRecommendation(null);
               }}
               role="tab"
               type="button"
@@ -329,30 +631,11 @@ export function RatesTable({ rows }: RatesTableProps) {
             </button>
           ))}
         </div>
-        {bankTabsPages > 1 ? (
-          <div className="bank-tabs-dots" aria-label="Navigation banques">
-            {Array.from({ length: bankTabsPages }).map((_, index) => (
-              <button
-                aria-label={`Afficher le groupe de banques ${index + 1}`}
-                aria-current={index === activeBankTabsPage ? "true" : undefined}
-                className={index === activeBankTabsPage ? "active" : ""}
-                key={index}
-                onClick={() => {
-                  const node = bankTabsRef.current;
-                  const maxScroll = node ? Math.max(0, node.scrollWidth - node.clientWidth) : bankTabsMaxScroll;
-                  const nextScroll = bankTabsPages === 1 ? 0 : (maxScroll / (bankTabsPages - 1)) * index;
-                  setBankTabsScroll(nextScroll);
-                  setBankTabsMaxScroll(maxScroll);
-                  node?.scrollTo({ left: nextScroll, behavior: "smooth" });
-                }}
-                type="button"
-              />
-            ))}
-          </div>
-        ) : null}
       </div>
+      </aside>
 
-      <div className="table-meta">
+      <section className="rates-content" aria-label={`BarÃ¨me ${selectedBank}`}>
+        <div className="table-meta">
         <span>
           <SlidersHorizontal size={16} aria-hidden="true" />
           {rowCountLabel}
@@ -360,47 +643,122 @@ export function RatesTable({ rows }: RatesTableProps) {
         <span>{latestUpdate ? `Mise à jour : ${latestUpdate}` : "Mise à jour à compléter"}</span>
       </div>
 
-      {importedMarkdown ? (
-        <ImportedMarkdownRateTable markdown={importedMarkdown} rows={selectedRows} />
-      ) : isSocieteGeneraleBank ? (
-        <SgRateTable rows={sgRows} />
-      ) : isBprpBank ? (
-        <BprpRateTable activeTab={activeBprpTab} onTabChange={setActiveBprpTab} rows={bprpRows} />
-      ) : isBpvfBank ? (
-        <BpvfRateTable rows={selectedRows} />
-      ) : isBnpBank ? (
-        <BnpRateTable bank={selectedBank} rows={bnpRows} />
-      ) : isBpbfcBank ? (
-        <BpbfcRateTable tables={bpbfcTables} />
-      ) : isBredBank ? (
-        <BredRateTable rows={bredRows} />
-      ) : isBcpBank ? (
-        <BcpRateTable rows={bcpRows} />
-      ) : isCeidfBank ? (
-        <CeidfRateTable activeTab={activeCeidfTab} onTabChange={setActiveCeidfTab} rows={ceidfRows} />
-      ) : isCaidfBank ? (
-        <CaidfRateTable rows={caidfRows} />
-      ) : isCabpBank ? (
-        <CabpRateTable tables={cabpTables} />
-      ) : isCasraBank ? (
-        <CasraRateTable tables={casraTables} />
-      ) : isFortuneoBank ? (
-        <FortuneoRateTable rows={fortuneoRows} />
-      ) : isPalatineBank ? (
-        <PalatineRateTable activeTab={activePalatineTab} onTabChange={setActivePalatineTab} rows={palatineRows} />
-      ) : isPostalBank ? (
-        <PostalRateTable rows={postalRows} />
-      ) : isCcfBank ? (
-        <CcfRateTable rows={ccfRows} />
-      ) : (
-        <DefaultRateTable rows={selectedRows} />
-      )}
+        <section className="recommendation-panel" aria-label="Simulation de financement">
+          <form className="recommendation-form" onSubmit={handleRecommendationSubmit}>
+            <label>Achat<input inputMode="decimal" value={projectAmount} onChange={(event) => setProjectAmount(event.target.value)} /></label>
+            <label>Apport<input inputMode="decimal" value={contributionAmount} onChange={(event) => setContributionAmount(event.target.value)} /></label>
+            <label>Emprunteurs<select value={borrowerCount} onChange={(event) => setBorrowerCount(event.target.value)}><option value="1">1</option><option value="2">2</option></select></label>
+            <label>Age<input inputMode="numeric" value={age} onChange={(event) => setAge(event.target.value)} /></label>
+            <label>Duree<select value={durationYears} onChange={(event) => setDurationYears(event.target.value)}><option value="10">10 ans</option><option value="12">12 ans</option><option value="15">15 ans</option><option value="20">20 ans</option><option value="25">25 ans</option></select></label>
+            <label>DPE<select value={dpeGroup} onChange={(event) => setDpeGroup(event.target.value)}><option value="ANY">Non renseigne</option><option value="A_B">A ou B</option><option value="A_B_C">A, B ou C</option><option value="A_TO_D">A a D</option><option value="E_F_G_NONE">E, F, G ou sans DPE</option></select></label>
+            <label>Type de taux<select value={rateType} onChange={(event) => setRateType(event.target.value as "fixed" | "variable" | "both")}><option value="fixed">Fixe</option><option value="variable">Variable</option><option value="both">Les deux</option></select></label>
+            <div className="budget-lines">
+              <div className="budget-tabs" role="tablist" aria-label="Revenus et charges">
+                <button className={activeBudgetTab === "income" ? "active" : ""} onClick={() => setActiveBudgetTab("income")} type="button">Revenus</button>
+                <button className={activeBudgetTab === "charges" ? "active" : ""} onClick={() => setActiveBudgetTab("charges")} type="button">Charges</button>
+              </div>
+              <div className="income-lines-header">
+                <strong>{activeBudgetTab === "income" ? "Revenus pris en compte" : "Charges déclarées"}</strong>
+                <span>{activeBudgetTab === "income" ? `Total mensuel : ${formatEuro(monthlyIncome)}` : `Total mensuel : ${formatEuro(monthlyCharges)}`}</span>
+              </div>
+              {activeBudgetTab === "income" ? (
+                <>
+                  {incomeLines.map((line) => (
+                    <div className="income-line" key={line.id}>
+                      <select value={line.label} onChange={(event) => updateIncomeLine(line.id, { label: event.target.value })}>
+                        {incomeLabels.map((label) => <option key={label} value={label}>{label}</option>)}
+                      </select>
+                      <input inputMode="decimal" value={line.amount} onChange={(event) => updateIncomeLine(line.id, { amount: event.target.value })} placeholder="Montant" />
+                      <select value={line.period} onChange={(event) => updateIncomeLine(line.id, { period: event.target.value as "monthly" | "annual" })}>
+                        <option value="monthly">Mensuel</option>
+                        <option value="annual">Annuel</option>
+                      </select>
+                      <button aria-label="Retirer ce revenu" className="income-line-remove" onClick={() => removeIncomeLine(line.id)} type="button"><Trash2 size={15} aria-hidden="true" /></button>
+                      {line.label === "Revenus locatifs" ? <span className="income-line-note">70 % retenu</span> : null}
+                    </div>
+                  ))}
+                  <button className="income-line-add" onClick={addIncomeLine} type="button"><Plus size={15} aria-hidden="true" />Ajouter un revenu</button>
+                </>
+              ) : (
+                <>
+                  {chargeLines.map((line) => (
+                    <div className="income-line" key={line.id}>
+                      <select value={line.label} onChange={(event) => updateChargeLine(line.id, { label: event.target.value })}>
+                        {chargeLabels.map((label) => <option key={label} value={label}>{label}</option>)}
+                      </select>
+                      <input inputMode="decimal" value={line.amount} onChange={(event) => updateChargeLine(line.id, { amount: event.target.value })} placeholder="Montant mensuel" />
+                      <button aria-label="Retirer cette charge" className="income-line-remove" onClick={() => removeChargeLine(line.id)} type="button"><Trash2 size={15} aria-hidden="true" /></button>
+                    </div>
+                  ))}
+                  <button className="income-line-add" onClick={addChargeLine} type="button"><Plus size={15} aria-hidden="true" />Ajouter une charge</button>
+                </>
+              )}
+            </div>
+            <div className="recommendation-actions">
+              <button className="recommendation-submit" disabled={recommendationStatus === "loading" || recommendationStatus === "adjusting"} type="submit">
+                {recommendationStatus === "loading" ? <Loader2 className="spin-icon" size={17} aria-hidden="true" /> : <Calculator size={17} aria-hidden="true" />}
+                Simuler
+              </button>
+              <button className="recommendation-adjust" disabled={recommendationStatus === "loading" || recommendationStatus === "adjusting"} onClick={handleAdjustPurchaseAmount} type="button">
+                {recommendationStatus === "adjusting" ? <Loader2 className="spin-icon" size={17} aria-hidden="true" /> : <SlidersHorizontal size={17} aria-hidden="true" />}
+                Ajuster
+              </button>
+            </div>
+          </form>
+
+          <div className="recommendation-results" aria-live="polite">
+            {recommendations.length ? (
+              <>
+              {recommendationMessage ? <p className="recommendation-message">{recommendationMessage}</p> : null}
+              {recommendations.map((recommendation, index) => (
+                <article
+                  className={`recommendation-card ${highlightedRecommendation?.bankName === recommendation.bankName && highlightedRecommendation.rate === recommendation.rate ? "active" : ""}`}
+                  key={`${recommendation.bankName}-${recommendation.rate}-${index}`}
+                  onClick={() => {
+                    setActiveBank(recommendation.bankName);
+                    setHighlightedRecommendation({ bankName: recommendation.bankName, rate: recommendation.rate });
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setActiveBank(recommendation.bankName);
+                      setHighlightedRecommendation({ bankName: recommendation.bankName, rate: recommendation.rate });
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <BankLogo bank={recommendation.bankName} />
+                  <div><strong>{recommendation.bankName}</strong></div>
+                  <div><strong>{formatPercent(recommendation.rate)}</strong><span>{recommendation.durationYears} ans · {recommendation.rateType === "variable" ? "Variable" : "Fixe"}</span></div>
+                  <div><strong>{formatEuro(recommendation.simulation.totalMonthlyPayment)}</strong><span>Credit + assurance</span></div>
+                  <div className="simulation-details">
+                    <span><strong>{formatEuro(recommendation.simulation.monthlyCredit)}</strong> Credit</span>
+                    <span><strong>{formatEuro(recommendation.simulation.monthlyInsurance)}</strong> Assurance ({formatPercent(recommendation.simulation.insurance.averageRate)})</span>
+                    <span><strong>{formatEuro(recommendation.simulation.brokerageFee)}</strong> Honoraires</span>
+                    <span><strong>{formatEuro(recommendation.simulation.bankFee)}</strong> Frais banque</span>
+                    <span><strong>{formatEuro(recommendation.simulation.creditLogementFee)}</strong> Credit Logement</span>
+                    <span><strong>{formatDebtRatio(recommendation.simulation.debtRatio)}</strong> Endettement</span>
+                    <span><strong>{formatEuro(recommendation.simulation.remainingIncome)}</strong> Reste a vivre</span>
+                    <span><strong>{formatEuro(recommendation.simulation.totalCost)}</strong> Cout total estime</span>
+                  </div>
+                </article>
+              ))}
+              </>
+            ) : (
+              <p>{recommendationMessage || "Renseigne ton projet pour afficher les 3 meilleures propositions."}</p>
+            )}
+          </div>
+        </section>
+
+        <div className="rates-table-body">{rateTable}</div>
+      </section>
     </div>
   );
 }
 
-function ImportedMarkdownRateTable({ markdown, rows }: { markdown: string; rows: RateRow[] }) {
-  const tables = parseMarkdownTables(markdown);
+function ImportedMarkdownRateTable({ bank, markdown, rows }: { bank: string; markdown: string; rows: RateRow[] }) {
+  const tables = parseMarkdownTables(markdown, bank);
 
   if (!tables.length) {
     return <DefaultRateTable rows={rows} />;
@@ -446,7 +804,42 @@ function ImportedMarkdownRateTable({ markdown, rows }: { markdown: string; rows:
   );
 }
 
-function parseMarkdownTables(markdown: string) {
+function parseFrenchNumber(value: string) {
+  const parsed = Number(value.replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function calculateAnnualIncome(lines: IncomeLine[]) {
+  return Math.round(
+    lines.reduce((total, line) => {
+      const annualAmount = line.period === "monthly" ? parseFrenchNumber(line.amount) * 12 : parseFrenchNumber(line.amount);
+      const weightedAmount = line.label === "Revenus locatifs" ? annualAmount * 0.7 : annualAmount;
+      return total + weightedAmount;
+    }, 0),
+  );
+}
+
+function calculateMonthlyCharges(lines: ChargeLine[]) {
+  return Math.round(lines.reduce((total, line) => total + parseFrenchNumber(line.amount), 0));
+}
+
+function formatEuro(value: number) {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "EUR",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatPercent(value: number) {
+  return `${value.toFixed(2).replace(".", ",")} %`;
+}
+
+function formatDebtRatio(value: number | null) {
+  return value === null ? "n/a" : formatPercent(value);
+}
+
+function parseMarkdownTables(markdown: string, bank: string) {
   const blocks = extractMarkdownTableBlocks(markdown);
 
   return blocks
@@ -458,7 +851,8 @@ function parseMarkdownTables(markdown: string) {
         return null;
       }
 
-      const title = findTitleBeforeTable(markdown, block) || (blocks.length > 1 ? `Tableau ${index + 1}` : "");
+      const title = normalizeImportedTableTitle(findTitleBeforeTable(markdown, block) || (blocks.length > 1 ? `Tableau ${index + 1}` : ""), bank);
+
       const rawHeaders = lines.slice(0, separatorIndex).map(parseMarkdownCells);
       const rawRows = lines
         .slice(separatorIndex + 1)
@@ -469,6 +863,18 @@ function parseMarkdownTables(markdown: string) {
       return { title, headers, rows };
     })
     .filter((table): table is { title: string; headers: string[][]; rows: string[][] } => Boolean(table));
+}
+
+function normalizeImportedTableTitle(title: string, bank: string) {
+  if (bank === "LCL" && /^Tableau\s+\d+$/i.test(title)) {
+    return "";
+  }
+
+  if (bank === "LCL" && /^DE PROJETS\s*\(2\)\s*\|\s*120K€\+\s*\|\s*120K€\+/i.test(title)) {
+    return "";
+  }
+
+  return cleanImportedCell(title);
 }
 
 function extractMarkdownTableBlocks(markdown: string) {
@@ -642,6 +1048,8 @@ const sgInsuranceBfmRows: SgInsuranceRow[] = [
 ];
 
 function SgRateTable({ rows }: { rows: SgMatrixRow[] }) {
+  const isProvince = rows.some((row) => row.twoBorrowerIncome.includes("80"));
+
   return (
     <>
       <div className="table-scroll">
@@ -685,7 +1093,7 @@ function SgRateTable({ rows }: { rows: SgMatrixRow[] }) {
         <div className="rate-note-groups">
           <section>
             <h4>Barème</h4>
-            <p>Barème prescripteur IDF, taux nominaux, en vigueur au 01/05/2026. Taux sous réserve d'acceptation du dossier par Société Générale et du respect de la réglementation sur l'usure.</p>
+            <p>{isProvince ? "Bareme Province, taux nominaux, en vigueur en mai 2026." : "Bareme prescripteur IDF, taux nominaux, en vigueur au 01/05/2026."} Taux sous reserve d&apos;acceptation du dossier par Societe Generale et du respect de la reglementation sur l&apos;usure.</p>
             <p>Financement par une personne physique ou une SCI composée de personnes physiques uniquement, pour un bien immobilier à usage d'habitation : résidence principale, secondaire, locative ou travaux éligibles au prêt immobilier.</p>
           </section>
           <section>
@@ -1990,26 +2398,33 @@ function createBprpMatrix(rows: RateRow[], activeTab: BprpTapKey): BprpMatrixRow
 }
 
 function createSgMatrix(rows: RateRow[]): SgMatrixRow[] {
-  const profileOrder = ["< 32 k€ / < 42 k€", "> 32 k€ / > 42 k€", "> 80 k€ / > 100 k€"];
+  const profileOrder = ["low", "standard", "provincePremium", "idfPremium"];
   const profileDetails: Record<string, Pick<SgMatrixRow, "singleBorrowerIncome" | "twoBorrowerIncome">> = {
-    "< 32 k€ / < 42 k€": { singleBorrowerIncome: "< 32 k€**", twoBorrowerIncome: "< 42 k€**" },
-    "> 32 k€ / > 42 k€": { singleBorrowerIncome: "> 32 k€**", twoBorrowerIncome: "> 42 k€**" },
-    "> 80 k€ / > 100 k€": { singleBorrowerIncome: "> 80 k€", twoBorrowerIncome: "> 100 k€" },
+    low: { singleBorrowerIncome: "< 32 kEUR**", twoBorrowerIncome: "< 42 kEUR**" },
+    standard: { singleBorrowerIncome: "> 32 kEUR**", twoBorrowerIncome: "> 42 kEUR**" },
+    provincePremium: { singleBorrowerIncome: "> 60 kEUR", twoBorrowerIncome: "> 80 kEUR" },
+    idfPremium: { singleBorrowerIncome: "> 80 kEUR", twoBorrowerIncome: "> 100 kEUR" },
   };
   const grouped = new Map<string, SgMatrixRow>();
 
   for (const row of rows) {
     const durationKey = getSgDurationKey(row.durationLabel);
-    const details = profileDetails[row.profile];
+    const profileKey = getSgProfileKey(row.profile);
 
-    if (!durationKey || !details) {
+    if (!durationKey || !profileKey) {
+      continue;
+    }
+
+    const details = profileDetails[profileKey];
+
+    if (!details) {
       continue;
     }
 
     const current =
-      grouped.get(row.profile) ||
+      grouped.get(profileKey) ||
       ({
-        profile: row.profile,
+        profile: profileKey,
         ...details,
         rates: {
           relais: null,
@@ -2024,13 +2439,73 @@ function createSgMatrix(rows: RateRow[]): SgMatrixRow[] {
       } satisfies SgMatrixRow);
 
     current.rates[durationKey] = row.rate;
-    grouped.set(row.profile, current);
+    grouped.set(profileKey, current);
   }
 
   return Array.from(grouped.values()).sort((a, b) => profileOrder.indexOf(a.profile) - profileOrder.indexOf(b.profile));
 }
 
+function getSgProfileKey(profile: string) {
+  const normalized = profile
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\s/g, "")
+    .toLowerCase();
+
+  if (normalized.includes("<32k") && normalized.includes("<42k")) {
+    return "low";
+  }
+
+  if (normalized.includes(">32k") && normalized.includes(">42k")) {
+    return "standard";
+  }
+
+  if (normalized.includes(">60k") && normalized.includes(">80k")) {
+    return "provincePremium";
+  }
+
+  if (normalized.includes(">80k") && normalized.includes(">100k")) {
+    return "idfPremium";
+  }
+
+  return null;
+}
+
 function getSgDurationKey(durationLabel: string): SgDurationKey | null {
+  const normalized = durationLabel.toLowerCase();
+
+  if (normalized.includes("relais")) {
+    return "relais";
+  }
+
+  if (normalized.includes("3") && normalized.includes("7")) {
+    return "threeToSeven";
+  }
+
+  if (normalized.includes("7") && normalized.includes("10")) {
+    return "sevenToTen";
+  }
+
+  if (normalized.includes("10") && normalized.includes("12")) {
+    return "tenToTwelve";
+  }
+
+  if (normalized.includes("12") && normalized.includes("15")) {
+    return "twelveToFifteen";
+  }
+
+  if (normalized.includes("15") && normalized.includes("17")) {
+    return "fifteenToSeventeen";
+  }
+
+  if (normalized.includes("17") && normalized.includes("20")) {
+    return "seventeenToTwenty";
+  }
+
+  if (normalized.includes("20") && normalized.includes("25")) {
+    return "twentyToTwentyFive";
+  }
+
   switch (durationLabel) {
     case "Crédit relais indépendant":
       return "relais";

@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { Calculator, Loader2, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { Calculator, Check, Loader2, Pencil, Plus, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { getBankInitials, getBankLogo } from "@/lib/bank-logos";
 import { formatRate, RateRow } from "@/lib/rates";
@@ -21,6 +21,16 @@ type ChargeLine = {
   id: string;
   label: string;
   amount: string;
+};
+
+type BorrowerInfo = {
+  id: string;
+  civility: string;
+  lastName: string;
+  firstName: string;
+  birthDate: string;
+  mobile: string;
+  email: string;
 };
 
 const incomeLabels = [
@@ -51,6 +61,111 @@ const chargeLabels = [
   "Terrain",
 ];
 
+const usageOptions = [
+  { value: "MAIN_RESIDENCE", label: "Residence principale" },
+  { value: "SECONDARY_RESIDENCE", label: "Residence secondaire" },
+  { value: "RENTAL_INVESTMENT", label: "Investissement locatif" },
+  { value: "LMNP", label: "LMNP" },
+  { value: "WORKS", label: "Travaux" },
+  { value: "CONSTRUCTION", label: "Construction" },
+  { value: "OTHER", label: "Autre" },
+];
+
+const propertyStateOptions = [
+  { value: "OLD", label: "Ancien" },
+  { value: "NEW", label: "Neuf" },
+  { value: "VEFA", label: "VEFA (Vente sur plan)" },
+];
+
+const createBorrower = (id = `borrower-${Date.now()}`): BorrowerInfo => ({
+  id,
+  civility: "Monsieur",
+  lastName: "",
+  firstName: "",
+  birthDate: "",
+  mobile: "",
+  email: "",
+});
+
+const isFrenchMobileNumber = (value: string) => {
+  const normalized = value.replace(/[\s.\-()]/g, "");
+  return /^(?:0[67]\d{8}|(?:\+33|0033)[67]\d{8})$/.test(normalized);
+};
+
+const formatFrenchMobileNumber = (value: string) => {
+  const normalized = value.replace(/[\s.\-()]/g, "");
+
+  if (/^0[67]\d{8}$/.test(normalized)) {
+    return `+33 ${normalized.slice(1, 2)} ${normalized.slice(2, 4)} ${normalized.slice(4, 6)} ${normalized.slice(6, 8)} ${normalized.slice(8, 10)}`;
+  }
+
+  if (/^(?:\+33|0033)[67]\d{8}$/.test(normalized)) {
+    const national = normalized.replace(/^(?:\+33|0033)/, "");
+    return `+33 ${national.slice(0, 1)} ${national.slice(1, 3)} ${national.slice(3, 5)} ${national.slice(5, 7)} ${national.slice(7, 9)}`;
+  }
+
+  return value;
+};
+
+const isValidEmail = (value: string) => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+};
+
+const parseFrenchBirthDate = (value: string) => {
+  const normalized = formatFrenchBirthDate(value);
+  const match = normalized.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+
+  return date;
+};
+
+const formatFrenchBirthDate = (value: string) => {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+
+  if (digits.length <= 2) {
+    return digits;
+  }
+
+  if (digits.length <= 4) {
+    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  }
+
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+};
+
+const calculateAge = (birthDate: Date, referenceDate = new Date()) => {
+  let age = referenceDate.getFullYear() - birthDate.getFullYear();
+  const hasBirthdayPassed =
+    referenceDate.getMonth() > birthDate.getMonth() ||
+    (referenceDate.getMonth() === birthDate.getMonth() && referenceDate.getDate() >= birthDate.getDate());
+
+  return hasBirthdayPassed ? age : age - 1;
+};
+
+const formatLastName = (value: string) => {
+  return value.trim().replace(/\s+/g, " ").toLocaleUpperCase("fr-FR");
+};
+
+const formatFirstName = (value: string) => {
+  return value
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("fr-FR")
+    .replace(/(^|[\s-])(\p{L})/gu, (match, separator: string, letter: string) => `${separator}${letter.toLocaleUpperCase("fr-FR")}`);
+};
+
 type RecommendationResult = {
   bankName: string;
   logoPath: string | null;
@@ -77,6 +192,7 @@ type RecommendationResult = {
     brokerageFee: number;
     bankFee: number;
     creditLogementFee: number;
+    notaryFees: number;
     totalFees: number;
     totalCost: number;
     insurance: {
@@ -92,6 +208,24 @@ type RecommendationResult = {
     averageRate: number | null;
     count: number;
   };
+};
+
+type SavedSimulation = {
+  id: string;
+  projectAmount: number;
+  contributionAmount: number;
+  usage: string;
+  propertyState: string;
+  notaryFees: number;
+  annualIncome: number;
+  annualCharges: number;
+  borrowerCount: number;
+  durationYears: number;
+  dpeGroup: string;
+  rateType: "fixed" | "variable" | "both";
+  recommendations?: RecommendationResult[];
+  createdAt: string;
+  borrowers: BorrowerInfo[];
 };
 
 type PostalMatrixRow = {
@@ -203,8 +337,21 @@ export function RatesTable({ rows }: RatesTableProps) {
   const [activePalatineTab, setActivePalatineTab] = useState<PalatineScaleKey>("patrimoniale");
   const [activeCeidfTab, setActiveCeidfTab] = useState<CeidfCustomerKey>("prospect");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activePanelTab, setActivePanelTab] = useState<"simulator" | "borrowers">("borrowers");
   const [projectAmount, setProjectAmount] = useState("300000");
   const [contributionAmount, setContributionAmount] = useState("30000");
+  const [usage, setUsage] = useState("MAIN_RESIDENCE");
+  const [propertyState, setPropertyState] = useState<"OLD" | "NEW" | "VEFA">("OLD");
+  const [borrowerDraft, setBorrowerDraft] = useState<BorrowerInfo>(createBorrower("borrower-draft"));
+  const [borrowers, setBorrowers] = useState<BorrowerInfo[]>([]);
+  const [borrowerEmailSearch, setBorrowerEmailSearch] = useState("");
+  const [borrowerEmailSuggestions, setBorrowerEmailSuggestions] = useState<BorrowerInfo[]>([]);
+  const [borrowerValidationMessage, setBorrowerValidationMessage] = useState("");
+  const [borrowerValidationStatus, setBorrowerValidationStatus] = useState<"idle" | "checking" | "error">("idle");
+  const [currentSimulationId, setCurrentSimulationId] = useState<string | null>(null);
+  const [editingBorrowerId, setEditingBorrowerId] = useState<string | null>(null);
+  const [editingBorrower, setEditingBorrower] = useState<BorrowerInfo | null>(null);
+  const [borrowerUpdateStatus, setBorrowerUpdateStatus] = useState<"idle" | "saving" | "error">("idle");
   const [activeBudgetTab, setActiveBudgetTab] = useState<"income" | "charges">("income");
   const [incomeLines, setIncomeLines] = useState<IncomeLine[]>([
     { id: "income-1", label: "Salaire net", amount: "4500", period: "monthly" },
@@ -212,14 +359,15 @@ export function RatesTable({ rows }: RatesTableProps) {
   const [chargeLines, setChargeLines] = useState<ChargeLine[]>([
     { id: "charge-1", label: "Credit consommation", amount: "" },
   ]);
-  const [borrowerCount, setBorrowerCount] = useState("2");
-  const [age, setAge] = useState("35");
   const [durationYears, setDurationYears] = useState("25");
   const [dpeGroup, setDpeGroup] = useState("ANY");
   const [rateType, setRateType] = useState<"fixed" | "variable" | "both">("fixed");
   const [recommendationStatus, setRecommendationStatus] = useState<"idle" | "loading" | "adjusting" | "success" | "error">("idle");
   const [recommendationMessage, setRecommendationMessage] = useState("");
+  const [simulationSaveStatus, setSimulationSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [recommendations, setRecommendations] = useState<RecommendationResult[]>([]);
+  const [recentSimulations, setRecentSimulations] = useState<SavedSimulation[]>([]);
+  const [recentSimulationStatus, setRecentSimulationStatus] = useState<"idle" | "loading" | "error">("idle");
   const [highlightedRecommendation, setHighlightedRecommendation] = useState<{ bankName: string; rate: number } | null>(null);
   const ratesContentRef = useRef<HTMLDivElement>(null);
 
@@ -243,6 +391,58 @@ export function RatesTable({ rows }: RatesTableProps) {
   const annualIncome = useMemo(() => calculateAnnualIncome(incomeLines), [incomeLines]);
   const monthlyIncome = useMemo(() => Math.round(annualIncome / 12), [annualIncome]);
   const monthlyCharges = useMemo(() => calculateMonthlyCharges(chargeLines), [chargeLines]);
+  const notaryFees = useMemo(() => calculateNotaryFees(parseFrenchNumber(projectAmount), propertyState), [projectAmount, propertyState]);
+  const filteredBorrowers = useMemo(() => {
+    const normalizedSearch = borrowerEmailSearch.trim().toLowerCase();
+    return normalizedSearch ? borrowers.filter((borrower) => borrower.email.toLowerCase().includes(normalizedSearch)) : borrowers;
+  }, [borrowerEmailSearch, borrowers]);
+  const simulationBorrowerCount = Math.max(1, borrowers.length);
+  const borrowerAges = borrowers.map((borrower) => parseFrenchBirthDate(borrower.birthDate)).filter((date): date is Date => Boolean(date)).map((date) => calculateAge(date));
+  const simulationAge = borrowerAges.length ? Math.max(...borrowerAges) : 35;
+
+  useEffect(() => {
+    const search = borrowerEmailSearch.trim();
+
+    if (search.length < 2) {
+      setBorrowerEmailSuggestions([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      const response = await fetch(`/api/simulations/borrowers?email=${encodeURIComponent(search)}`, { signal: controller.signal }).catch(() => null);
+      const payload = response ? ((await response.json().catch(() => null)) as { ok?: boolean; borrowers?: BorrowerInfo[] } | null) : null;
+      setBorrowerEmailSuggestions(payload?.ok ? payload.borrowers ?? [] : []);
+    }, 180);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeout);
+    };
+  }, [borrowerEmailSearch]);
+
+  useEffect(() => {
+    if (activePanelTab !== "simulator") {
+      return;
+    }
+
+    const controller = new AbortController();
+    setRecentSimulationStatus("loading");
+
+    void fetch("/api/simulations", { signal: controller.signal })
+      .then((response) => response.json())
+      .then((payload: { ok?: boolean; simulations?: SavedSimulation[] }) => {
+        setRecentSimulations(payload.ok ? payload.simulations ?? [] : []);
+        setRecentSimulationStatus(payload.ok ? "idle" : "error");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setRecentSimulationStatus("error");
+        }
+      });
+
+    return () => controller.abort();
+  }, [activePanelTab, currentSimulationId]);
 
   const selectedRows = useMemo(() => {
     return rows
@@ -362,15 +562,17 @@ export function RatesTable({ rows }: RatesTableProps) {
       body: JSON.stringify({
         projectAmount: nextProjectAmount,
         contributionAmount,
+        usage,
+        propertyState,
         income: annualIncome,
-        borrowerCount: parseFrenchNumber(borrowerCount),
-        borrowerType: borrowerCount === "1" ? "SINGLE" : "COUPLE",
+        borrowerCount: simulationBorrowerCount,
+        borrowerType: simulationBorrowerCount === 1 ? "SINGLE" : "COUPLE",
         customerType: "PROSPECT",
         loanType: "AMORTIZING",
         dpeGroup,
         duration: durationYears,
         criteria: {
-          age: parseFrenchNumber(age),
+          age: simulationAge,
           rateType,
           annualCharges: monthlyCharges * 12,
         },
@@ -391,13 +593,117 @@ export function RatesTable({ rows }: RatesTableProps) {
     setRecommendationMessage(nextRecommendations.length ? "" : "Aucune proposition compatible trouvee avec ces criteres.");
   };
 
+  const saveSimulation = async (nextRecommendations: RecommendationResult[], nextProjectAmount = projectAmount) => {
+    if (!borrowers.length || !nextRecommendations.length) {
+      setSimulationSaveStatus("idle");
+      return;
+    }
+
+    setSimulationSaveStatus("saving");
+    const response = await fetch("/api/simulations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        projectAmount: nextProjectAmount,
+        simulationId: currentSimulationId,
+        contributionAmount,
+        usage,
+        propertyState,
+        notaryFees,
+        annualIncome,
+        annualCharges: monthlyCharges * 12,
+        borrowerCount: simulationBorrowerCount,
+        ageRetained: simulationAge,
+        duration: durationYears,
+        dpeGroup,
+        rateType,
+        borrowers,
+        recommendations: nextRecommendations,
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as { ok?: boolean; message?: string; simulationId?: string } | null;
+
+    if (!response.ok || !payload?.ok) {
+      setSimulationSaveStatus("error");
+      return;
+    }
+
+    if (payload.simulationId) {
+      setCurrentSimulationId(payload.simulationId);
+    }
+
+    setSimulationSaveStatus("saved");
+  };
+
+  const resetSimulation = () => {
+    setProjectAmount("");
+    setContributionAmount("");
+    setUsage("MAIN_RESIDENCE");
+    setPropertyState("OLD");
+    setIncomeLines([{ id: "income-1", label: "Salaire net", amount: "", period: "monthly" }]);
+    setChargeLines([{ id: "charge-1", label: "Credit consommation", amount: "" }]);
+    setDurationYears("25");
+    setDpeGroup("ANY");
+    setRateType("fixed");
+    setBorrowerDraft(createBorrower("borrower-draft"));
+    setBorrowers([]);
+    setBorrowerEmailSearch("");
+    setBorrowerEmailSuggestions([]);
+    setBorrowerValidationMessage("");
+    setBorrowerValidationStatus("idle");
+    setRecommendations([]);
+    setHighlightedRecommendation(null);
+    setRecommendationStatus("idle");
+    setRecommendationMessage("");
+    setSimulationSaveStatus("idle");
+    setCurrentSimulationId(null);
+    setActivePanelTab("borrowers");
+  };
+
+  const loadSimulation = async (simulationId: string) => {
+    setRecentSimulationStatus("loading");
+    const response = await fetch(`/api/simulations?id=${encodeURIComponent(simulationId)}`);
+    const payload = (await response.json().catch(() => null)) as { ok?: boolean; simulation?: SavedSimulation; message?: string } | null;
+
+    if (!response.ok || !payload?.ok || !payload.simulation) {
+      setRecentSimulationStatus("error");
+      return;
+    }
+
+    const simulation = payload.simulation;
+    setCurrentSimulationId(simulation.id);
+    setProjectAmount(String(Math.round(simulation.projectAmount)));
+    setContributionAmount(String(Math.round(simulation.contributionAmount)));
+    setUsage(simulation.usage || "MAIN_RESIDENCE");
+    setPropertyState((simulation.propertyState as "OLD" | "NEW" | "VEFA") || "OLD");
+    setIncomeLines([{ id: "income-1", label: "Salaire net", amount: String(Math.round(simulation.annualIncome)), period: "annual" }]);
+    setChargeLines([{ id: "charge-1", label: "Credit consommation", amount: String(Math.round(simulation.annualCharges / 12)) }]);
+    setDurationYears(String(simulation.durationYears));
+    setDpeGroup(simulation.dpeGroup || "ANY");
+    setRateType(simulation.rateType || "fixed");
+    setBorrowers(simulation.borrowers);
+    setBorrowerDraft(createBorrower("borrower-draft"));
+    setBorrowerEmailSearch("");
+    setBorrowerEmailSuggestions([]);
+    setRecommendations(Array.isArray(simulation.recommendations) ? simulation.recommendations : []);
+    setHighlightedRecommendation(null);
+    setRecommendationStatus(simulation.recommendations?.length ? "success" : "idle");
+    setRecommendationMessage("");
+    setSimulationSaveStatus("idle");
+    setRecentSimulationStatus("idle");
+  };
+
   const handleRecommendationSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setRecommendationStatus("loading");
     setRecommendationMessage("");
 
     try {
-      applyRecommendations(await fetchRecommendations());
+      const nextRecommendations = await fetchRecommendations();
+      applyRecommendations(nextRecommendations);
+      await saveSimulation(nextRecommendations);
     } catch (error) {
       setRecommendations([]);
       setRecommendationStatus("error");
@@ -455,11 +761,21 @@ export function RatesTable({ rows }: RatesTableProps) {
         }
       }
 
-      const adjustedAmount = Math.round(bestAmount / 1000) * 1000;
+      let adjustedAmount = Math.floor(bestAmount / 1000) * 1000;
+      let finalRecommendations = await fetchRecommendations(String(adjustedAmount));
+      let finalDebtRatio = finalRecommendations[0]?.simulation.debtRatio ?? Number.POSITIVE_INFINITY;
+
+      while (finalDebtRatio > targetDebtRatio && adjustedAmount > contribution) {
+        adjustedAmount = Math.max(contribution, adjustedAmount - 1000);
+        finalRecommendations = await fetchRecommendations(String(adjustedAmount));
+        finalDebtRatio = finalRecommendations[0]?.simulation.debtRatio ?? Number.POSITIVE_INFINITY;
+      }
+
       setProjectAmount(String(adjustedAmount));
-      const finalRecommendations = await fetchRecommendations(String(adjustedAmount));
-      applyRecommendations(finalRecommendations.length ? finalRecommendations : bestRecommendations);
-      setRecommendationMessage(`Montant d'achat ajuste a ${formatEuro(adjustedAmount)} pour viser 35 % d'endettement.`);
+      const recommendationsToApply = finalRecommendations.length ? finalRecommendations : bestRecommendations;
+      applyRecommendations(recommendationsToApply);
+      await saveSimulation(recommendationsToApply, String(adjustedAmount));
+      setRecommendationMessage(`Montant d'achat ajuste a ${formatEuro(adjustedAmount)} pour ne pas depasser 35 % d'endettement.`);
     } catch (error) {
       setRecommendations([]);
       setRecommendationStatus("error");
@@ -504,6 +820,196 @@ export function RatesTable({ rows }: RatesTableProps) {
 
   const removeChargeLine = (id: string) => {
     setChargeLines((currentLines) => (currentLines.length > 1 ? currentLines.filter((line) => line.id !== id) : currentLines));
+  };
+
+  const updateBorrowerDraft = (nextInfo: Partial<BorrowerInfo>) => {
+    setBorrowerDraft((currentBorrower) => ({ ...currentBorrower, ...nextInfo }));
+  };
+
+  const validateBorrowerDraft = async () => {
+    const formattedMobile = formatFrenchMobileNumber(borrowerDraft.mobile);
+    const nextBorrower = {
+      ...borrowerDraft,
+      id: `borrower-${Date.now()}`,
+      lastName: formatLastName(borrowerDraft.lastName),
+      firstName: formatFirstName(borrowerDraft.firstName),
+      birthDate: formatFrenchBirthDate(borrowerDraft.birthDate),
+      mobile: formattedMobile,
+      email: borrowerDraft.email.trim(),
+    };
+
+    if (!nextBorrower.lastName.trim() || !nextBorrower.firstName.trim() || !parseFrenchBirthDate(nextBorrower.birthDate) || !isFrenchMobileNumber(nextBorrower.mobile) || !isValidEmail(nextBorrower.email)) {
+      setBorrowerDraft(nextBorrower);
+      setBorrowerValidationStatus("error");
+      setBorrowerValidationMessage("Complete les informations emprunteur avant de valider.");
+      return;
+    }
+
+    if (borrowers.some((borrower) => borrower.email.toLowerCase() === nextBorrower.email.toLowerCase())) {
+      setBorrowerValidationStatus("error");
+      setBorrowerValidationMessage("Cet email est deja ajoute a la simulation.");
+      return;
+    }
+
+    setBorrowerValidationStatus("checking");
+    setBorrowerValidationMessage("");
+
+    const response = await fetch("/api/simulations/borrowers", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        simulationId: currentSimulationId,
+        projectAmount,
+        contributionAmount,
+        usage,
+        propertyState,
+        notaryFees,
+        annualIncome,
+        annualCharges: monthlyCharges * 12,
+        ageRetained: simulationAge,
+        duration: durationYears,
+        dpeGroup,
+        rateType,
+        borrower: nextBorrower,
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as { ok?: boolean; message?: string; simulationId?: string; borrower?: BorrowerInfo } | null;
+
+    if (!response.ok || !payload?.ok) {
+      setBorrowerValidationStatus("error");
+      setBorrowerValidationMessage(payload?.message || "Ajout en base impossible.");
+      return;
+    }
+
+    if (payload.simulationId) {
+      setCurrentSimulationId(payload.simulationId);
+    }
+
+    setBorrowers((currentBorrowers) => [...currentBorrowers, payload.borrower ?? nextBorrower]);
+    setBorrowerDraft(createBorrower("borrower-draft"));
+    setBorrowerEmailSearch("");
+    setBorrowerEmailSuggestions([]);
+    setBorrowerValidationStatus("idle");
+    setBorrowerValidationMessage("");
+  };
+
+  const removeBorrower = (id: string) => {
+    setBorrowers((currentBorrowers) => currentBorrowers.filter((borrower) => borrower.id !== id));
+  };
+
+  const startBorrowerEdit = (borrower: BorrowerInfo) => {
+    setEditingBorrowerId(borrower.id);
+    setEditingBorrower({ ...borrower });
+    setBorrowerUpdateStatus("idle");
+    setBorrowerValidationMessage("");
+  };
+
+  const cancelBorrowerEdit = () => {
+    setEditingBorrowerId(null);
+    setEditingBorrower(null);
+    setBorrowerUpdateStatus("idle");
+  };
+
+  const updateEditingBorrower = (nextInfo: Partial<BorrowerInfo>) => {
+    setEditingBorrower((currentBorrower) => (currentBorrower ? { ...currentBorrower, ...nextInfo } : currentBorrower));
+  };
+
+  const saveBorrowerEdit = async () => {
+    if (!editingBorrower) {
+      return;
+    }
+
+    const nextBorrower = {
+      ...editingBorrower,
+      lastName: formatLastName(editingBorrower.lastName),
+      firstName: formatFirstName(editingBorrower.firstName),
+      birthDate: formatFrenchBirthDate(editingBorrower.birthDate),
+      mobile: formatFrenchMobileNumber(editingBorrower.mobile),
+      email: editingBorrower.email.trim(),
+    };
+
+    if (!nextBorrower.lastName || !nextBorrower.firstName || !parseFrenchBirthDate(nextBorrower.birthDate) || !isFrenchMobileNumber(nextBorrower.mobile) || !isValidEmail(nextBorrower.email)) {
+      setEditingBorrower(nextBorrower);
+      setBorrowerUpdateStatus("error");
+      setBorrowerValidationMessage("Complete les informations emprunteur avant de sauvegarder.");
+      return;
+    }
+
+    setBorrowerUpdateStatus("saving");
+    setBorrowerValidationMessage("");
+
+    const response = await fetch("/api/simulations/borrowers", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        borrowerId: nextBorrower.id,
+        borrower: nextBorrower,
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as { ok?: boolean; message?: string; borrower?: BorrowerInfo } | null;
+
+    if (!response.ok || !payload?.ok || !payload.borrower) {
+      setBorrowerUpdateStatus("error");
+      setBorrowerValidationMessage(payload?.message || "Mise a jour impossible.");
+      return;
+    }
+
+    setBorrowers((currentBorrowers) => currentBorrowers.map((borrower) => (borrower.id === payload.borrower?.id ? payload.borrower : borrower)));
+    setEditingBorrowerId(null);
+    setEditingBorrower(null);
+    setBorrowerUpdateStatus("idle");
+  };
+
+  const attachExistingBorrower = async (borrower: BorrowerInfo) => {
+    if (borrowers.some((currentBorrower) => currentBorrower.id === borrower.id)) {
+      setBorrowerEmailSearch(borrower.email);
+      setBorrowerEmailSuggestions([]);
+      return;
+    }
+
+    const response = await fetch("/api/simulations/borrowers", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        simulationId: currentSimulationId,
+        borrowerId: borrower.id,
+        projectAmount,
+        contributionAmount,
+        usage,
+        propertyState,
+        notaryFees,
+        annualIncome,
+        annualCharges: monthlyCharges * 12,
+        ageRetained: simulationAge,
+        duration: durationYears,
+        dpeGroup,
+        rateType,
+        borrower,
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as { ok?: boolean; message?: string; simulationId?: string; borrower?: BorrowerInfo } | null;
+
+    if (!response.ok || !payload?.ok || !payload.borrower) {
+      setBorrowerValidationStatus("error");
+      setBorrowerValidationMessage(payload?.message || "Ajout de l'emprunteur impossible.");
+      return;
+    }
+
+    if (payload.simulationId) {
+      setCurrentSimulationId(payload.simulationId);
+    }
+
+    setBorrowers((currentBorrowers) => [...currentBorrowers, payload.borrower as BorrowerInfo]);
+    setBorrowerEmailSearch(payload.borrower.email);
+    setBorrowerEmailSuggestions([]);
+    setBorrowerValidationStatus("idle");
+    setBorrowerValidationMessage("");
   };
 
   const rateTable = isSocieteGeneraleBank ? (
@@ -638,17 +1144,64 @@ export function RatesTable({ rows }: RatesTableProps) {
         <div className="table-meta">
         <span>
           <SlidersHorizontal size={16} aria-hidden="true" />
-          {rowCountLabel}
+          {selectedBank}
         </span>
-        <span>{latestUpdate ? `Mise à jour : ${latestUpdate}` : "Mise à jour à compléter"}</span>
+        <span className="table-meta-actions">
+          {latestUpdate ? `Mise à jour : ${latestUpdate}` : "Mise à jour à compléter"}
+          <button aria-label="Creer une nouvelle simulation" onClick={resetSimulation} title="Nouvelle simulation" type="button"><Plus size={16} aria-hidden="true" /></button>
+        </span>
       </div>
 
+        <div className="panel-tabs" role="tablist" aria-label="Simulation et emprunteurs">
+          <button
+            aria-selected={activePanelTab === "borrowers"}
+            className={activePanelTab === "borrowers" ? "active" : ""}
+            onClick={() => setActivePanelTab("borrowers")}
+            role="tab"
+            type="button"
+          >
+            Emprunteur{borrowers.length > 1 ? "s" : ""} ({borrowers.length})
+          </button>
+          <button
+            aria-selected={activePanelTab === "simulator"}
+            className={activePanelTab === "simulator" ? "active" : ""}
+            onClick={() => setActivePanelTab("simulator")}
+            role="tab"
+            type="button"
+          >
+            Simulateur
+          </button>
+        </div>
+
+        {activePanelTab === "simulator" ? (
         <section className="recommendation-panel" aria-label="Simulation de financement">
+          <div className="simulator-left-panel">
+            <div className="recent-simulations">
+              <div className="recent-simulations-header">
+                <strong>Dernieres simulations</strong>
+                <span>{recentSimulationStatus === "loading" ? "Chargement..." : `${recentSimulations.length} affichage${recentSimulations.length > 1 ? "s" : ""}`}</span>
+              </div>
+              <div className="recent-simulations-list">
+                {recentSimulations.length ? recentSimulations.map((simulation) => (
+                  <button
+                    className={simulation.id === currentSimulationId ? "active" : ""}
+                    key={simulation.id}
+                    onClick={() => void loadSimulation(simulation.id)}
+                    type="button"
+                  >
+                    <span>{formatDateTime(simulation.createdAt)}</span>
+                    <strong>{formatEuro(simulation.projectAmount)}</strong>
+                    <small>{simulation.borrowers.length ? simulation.borrowers.map((borrower) => `${borrower.firstName} ${borrower.lastName}`).join(", ") : `${simulation.borrowerCount} emprunteur${simulation.borrowerCount > 1 ? "s" : ""}`}</small>
+                  </button>
+                )) : <p>{recentSimulationStatus === "error" ? "Impossible de charger les simulations." : "Aucune simulation sauvegardee."}</p>}
+              </div>
+            </div>
           <form className="recommendation-form" onSubmit={handleRecommendationSubmit}>
             <label>Achat<input inputMode="decimal" value={projectAmount} onChange={(event) => setProjectAmount(event.target.value)} /></label>
             <label>Apport<input inputMode="decimal" value={contributionAmount} onChange={(event) => setContributionAmount(event.target.value)} /></label>
-            <label>Emprunteurs<select value={borrowerCount} onChange={(event) => setBorrowerCount(event.target.value)}><option value="1">1</option><option value="2">2</option></select></label>
-            <label>Age<input inputMode="numeric" value={age} onChange={(event) => setAge(event.target.value)} /></label>
+            <label>Usage<select value={usage} onChange={(event) => setUsage(event.target.value)}>{usageOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <label>Etat du bien<select value={propertyState} onChange={(event) => setPropertyState(event.target.value as "OLD" | "NEW" | "VEFA")}>{propertyStateOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <label>Frais de notaire<input readOnly value={formatEuro(notaryFees)} /></label>
             <label>Duree<select value={durationYears} onChange={(event) => setDurationYears(event.target.value)}><option value="10">10 ans</option><option value="12">12 ans</option><option value="15">15 ans</option><option value="20">20 ans</option><option value="25">25 ans</option></select></label>
             <label>DPE<select value={dpeGroup} onChange={(event) => setDpeGroup(event.target.value)}><option value="ANY">Non renseigne</option><option value="A_B">A ou B</option><option value="A_B_C">A, B ou C</option><option value="A_TO_D">A a D</option><option value="E_F_G_NONE">E, F, G ou sans DPE</option></select></label>
             <label>Type de taux<select value={rateType} onChange={(event) => setRateType(event.target.value as "fixed" | "variable" | "both")}><option value="fixed">Fixe</option><option value="variable">Variable</option><option value="both">Les deux</option></select></label>
@@ -705,8 +1258,12 @@ export function RatesTable({ rows }: RatesTableProps) {
               </button>
             </div>
           </form>
+          </div>
 
           <div className="recommendation-results" aria-live="polite">
+            {simulationSaveStatus === "saving" ? <p className="recommendation-message">Sauvegarde de la simulation...</p> : null}
+            {simulationSaveStatus === "saved" ? <p className="recommendation-message">Simulation sauvegardee.</p> : null}
+            {simulationSaveStatus === "error" ? <p className="recommendation-message">La simulation n'a pas pu etre sauvegardee.</p> : null}
             {recommendations.length ? (
               <>
               {recommendationMessage ? <p className="recommendation-message">{recommendationMessage}</p> : null}
@@ -737,6 +1294,7 @@ export function RatesTable({ rows }: RatesTableProps) {
                     <span><strong>{formatEuro(recommendation.simulation.monthlyInsurance)}</strong> Assurance ({formatPercent(recommendation.simulation.insurance.averageRate)})</span>
                     <span><strong>{formatEuro(recommendation.simulation.brokerageFee)}</strong> Honoraires</span>
                     <span><strong>{formatEuro(recommendation.simulation.bankFee)}</strong> Frais banque</span>
+                    <span><strong>{formatEuro(recommendation.simulation.notaryFees ?? 0)}</strong> Frais notaire</span>
                     <span><strong>{formatEuro(recommendation.simulation.creditLogementFee)}</strong> Credit Logement</span>
                     <span><strong>{formatDebtRatio(recommendation.simulation.debtRatio)}</strong> Endettement</span>
                     <span><strong>{formatEuro(recommendation.simulation.remainingIncome)}</strong> Reste a vivre</span>
@@ -750,6 +1308,89 @@ export function RatesTable({ rows }: RatesTableProps) {
             )}
           </div>
         </section>
+        ) : (
+        <section className="borrower-panel" aria-label="Informations emprunteurs">
+          <form className="borrower-form">
+            <div className="borrower-panel-header">
+              <div>
+                <strong>Informations emprunteurs</strong>
+                <span>{borrowers.length} emprunteur{borrowers.length > 1 ? "s" : ""}</span>
+              </div>
+              <label className="borrower-search-field">Recherche email<input value={borrowerEmailSearch} onChange={(event) => setBorrowerEmailSearch(event.target.value)} placeholder="nom@email.fr" type="search" />
+                {borrowerEmailSuggestions.length ? (
+                  <div className="borrower-email-suggestions">
+                    {borrowerEmailSuggestions.map((borrower) => (
+                      <button
+                        key={borrower.id}
+                        onClick={() => void attachExistingBorrower(borrower)}
+                        type="button"
+                      >
+                        <strong>{borrower.email}</strong>
+                        <span>{borrower.firstName} {borrower.lastName}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </label>
+            </div>
+            {(() => {
+              const hasInvalidMobile = borrowerDraft.mobile.trim().length > 0 && !isFrenchMobileNumber(borrowerDraft.mobile);
+              const hasInvalidEmail = borrowerDraft.email.trim().length > 0 && !isValidEmail(borrowerDraft.email);
+              const hasInvalidBirthDate = borrowerDraft.birthDate.trim().length > 0 && !parseFrenchBirthDate(borrowerDraft.birthDate);
+              const canValidateBorrower = Boolean(borrowerDraft.lastName.trim() && borrowerDraft.firstName.trim() && parseFrenchBirthDate(borrowerDraft.birthDate) && isFrenchMobileNumber(borrowerDraft.mobile) && isValidEmail(borrowerDraft.email));
+
+              return (
+                <div className="borrower-row">
+                  <label className="borrower-civility-field">Civilite<select value={borrowerDraft.civility} onChange={(event) => updateBorrowerDraft({ civility: event.target.value })}><option>Monsieur</option><option>Madame</option></select></label>
+                  <label className="borrower-name-field">Nom<input value={borrowerDraft.lastName} onChange={(event) => updateBorrowerDraft({ lastName: event.target.value })} autoComplete="family-name" /></label>
+                  <label className="borrower-firstname-field">Prenom<input value={borrowerDraft.firstName} onChange={(event) => updateBorrowerDraft({ firstName: event.target.value })} autoComplete="given-name" /></label>
+                  <label className={hasInvalidBirthDate ? "invalid borrower-birthdate-field" : "borrower-birthdate-field"}>Date de naissance<input aria-invalid={hasInvalidBirthDate} value={borrowerDraft.birthDate} onBlur={() => updateBorrowerDraft({ birthDate: formatFrenchBirthDate(borrowerDraft.birthDate) })} onChange={(event) => updateBorrowerDraft({ birthDate: formatFrenchBirthDate(event.target.value) })} inputMode="numeric" placeholder="jj/mm/aaaa" />{hasInvalidBirthDate ? <span>Date attendue : jj/mm/aaaa.</span> : null}</label>
+                  <label className={hasInvalidMobile ? "invalid borrower-mobile-field" : "borrower-mobile-field"}>Numero Mobile<input aria-invalid={hasInvalidMobile} value={borrowerDraft.mobile} onBlur={() => updateBorrowerDraft({ mobile: formatFrenchMobileNumber(borrowerDraft.mobile) })} onChange={(event) => updateBorrowerDraft({ mobile: event.target.value })} autoComplete="tel" inputMode="tel" placeholder="+33 6 12 34 56 78" />{hasInvalidMobile ? <span>Mobile francais requis.</span> : null}</label>
+                  <label className={hasInvalidEmail ? "invalid borrower-email-field" : "borrower-email-field"}>Mail<input aria-invalid={hasInvalidEmail} value={borrowerDraft.email} onChange={(event) => updateBorrowerDraft({ email: event.target.value })} autoComplete="email" inputMode="email" placeholder="nom@email.fr" type="email" />{hasInvalidEmail ? <span>Email non conforme.</span> : null}</label>
+                  <button className="borrower-validate" disabled={!canValidateBorrower || borrowerValidationStatus === "checking"} onClick={() => void validateBorrowerDraft()} type="button">{borrowerValidationStatus === "checking" ? "Verification..." : "Valider"}</button>
+                </div>
+              );
+            })()}
+            {borrowerValidationMessage ? <p className={`borrower-validation-message ${borrowerValidationStatus}`}>{borrowerValidationMessage}</p> : null}
+            <div className="borrower-table-wrap">
+              <table className="borrower-table">
+                <thead><tr><th>Civilite</th><th>Nom</th><th>Prenom</th><th>Naissance</th><th>Mobile</th><th>Mail</th><th></th></tr></thead>
+                <tbody>
+                  {filteredBorrowers.length ? filteredBorrowers.map((borrower) => {
+                    const isEditing = editingBorrowerId === borrower.id && editingBorrower;
+
+                    return (
+                      <tr key={borrower.id}>
+                        <td>{isEditing ? <select value={editingBorrower.civility} onChange={(event) => updateEditingBorrower({ civility: event.target.value })}><option>Monsieur</option><option>Madame</option></select> : borrower.civility}</td>
+                        <td>{isEditing ? <input value={editingBorrower.lastName} onChange={(event) => updateEditingBorrower({ lastName: event.target.value })} /> : borrower.lastName}</td>
+                        <td>{isEditing ? <input value={editingBorrower.firstName} onChange={(event) => updateEditingBorrower({ firstName: event.target.value })} /> : borrower.firstName}</td>
+                        <td>{isEditing ? <input inputMode="numeric" value={editingBorrower.birthDate} onBlur={() => updateEditingBorrower({ birthDate: formatFrenchBirthDate(editingBorrower.birthDate) })} onChange={(event) => updateEditingBorrower({ birthDate: formatFrenchBirthDate(event.target.value) })} /> : borrower.birthDate}</td>
+                        <td>{isEditing ? <input inputMode="tel" value={editingBorrower.mobile} onBlur={() => updateEditingBorrower({ mobile: formatFrenchMobileNumber(editingBorrower.mobile) })} onChange={(event) => updateEditingBorrower({ mobile: event.target.value })} /> : borrower.mobile}</td>
+                        <td>{isEditing ? <input inputMode="email" type="email" value={editingBorrower.email} onChange={(event) => updateEditingBorrower({ email: event.target.value })} /> : borrower.email}</td>
+                        <td>
+                          <div className="borrower-table-actions">
+                            {isEditing ? (
+                              <>
+                                <button aria-label="Sauvegarder cet emprunteur" disabled={borrowerUpdateStatus === "saving"} onClick={() => void saveBorrowerEdit()} type="button"><Check size={15} aria-hidden="true" /></button>
+                                <button aria-label="Annuler la modification" onClick={cancelBorrowerEdit} type="button"><X size={15} aria-hidden="true" /></button>
+                              </>
+                            ) : (
+                              <>
+                                <button aria-label="Modifier cet emprunteur" onClick={() => startBorrowerEdit(borrower)} type="button"><Pencil size={15} aria-hidden="true" /></button>
+                                <button aria-label="Retirer cet emprunteur" onClick={() => removeBorrower(borrower.id)} type="button"><Trash2 size={15} aria-hidden="true" /></button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }) : <tr><td colSpan={7}>{borrowerEmailSearch ? "Aucun emprunteur trouve avec cet email." : "Aucun emprunteur valide pour le moment."}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </form>
+        </section>
+        )}
 
         <div className="rates-table-body">{rateTable}</div>
       </section>
@@ -823,6 +1464,10 @@ function calculateMonthlyCharges(lines: ChargeLine[]) {
   return Math.round(lines.reduce((total, line) => total + parseFrenchNumber(line.amount), 0));
 }
 
+function calculateNotaryFees(projectAmount: number, nextPropertyState: string) {
+  return Math.round(projectAmount * (nextPropertyState === "OLD" ? 0.075 : 0.025));
+}
+
 function formatEuro(value: number) {
   return new Intl.NumberFormat("fr-FR", {
     style: "currency",
@@ -837,6 +1482,16 @@ function formatPercent(value: number) {
 
 function formatDebtRatio(value: number | null) {
   return value === null ? "n/a" : formatPercent(value);
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 function parseMarkdownTables(markdown: string, bank: string) {

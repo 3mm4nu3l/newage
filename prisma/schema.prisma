@@ -279,3 +279,52 @@ model AchievedRate {
   @@index([projectType, loanType, customerType])
   @@index([incomeTotalCents, dpeGroup])
 }
+
+model LoanSimulation {
+  id                 String               @id @default(cuid())
+  projectAmountCents Int
+  contributionCents  Int
+  usage              String               @default("MAIN_RESIDENCE")
+  propertyState      String               @default("OLD")
+  notaryFeesCents    Int                  @default(0)
+  annualIncomeCents  Int
+  annualChargesCents Int
+  borrowerCount      Int
+  ageRetained        Int
+  durationMonths     Int
+  dpeGroup           DpeGroup             @default(ANY)
+  rateType           String
+  recommendationJson Json?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  borrowers          LoanSimulationBorrower[]
+
+  @@index([createdAt])
+}
+
+model Borrower {
+  id          String                   @id @default(cuid())
+  civility    String
+  lastName    String
+  firstName   String
+  birthDate   DateTime
+  mobile      String
+  email       String                   @unique
+  createdAt   DateTime                 @default(now())
+  simulations LoanSimulationBorrower[]
+
+  @@index([email])
+}
+
+model LoanSimulationBorrower {
+  id           String         @id @default(cuid())
+  simulationId String
+  borrowerId   String
+  createdAt    DateTime       @default(now())
+  borrower     Borrower       @relation(fields: [borrowerId], references: [id], onDelete: Cascade)
+  simulation   LoanSimulation @relation(fields: [simulationId], references: [id], onDelete: Cascade)
+
+  @@unique([simulationId, borrowerId])
+  @@index([borrowerId])
+  @@index([simulationId])
+}

@@ -351,14 +351,15 @@ h2 {
 }
 
 .rates-content {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
 }
 
 .rates-table-body {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
 }
@@ -628,14 +629,137 @@ textarea:focus {
   gap: 8px;
 }
 
+.table-meta-actions button {
+  align-items: center;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  width: 32px;
+}
+
+.table-meta-actions button:hover {
+  background: var(--accent-soft);
+}
+
+.panel-tabs {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 0;
+  padding: 10px 14px;
+}
+
+.panel-tabs button {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 820;
+  min-height: 34px;
+  padding: 0 16px;
+}
+
+.panel-tabs button:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+.panel-tabs button:last-child {
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+}
+
+.panel-tabs button.active,
+.panel-tabs button:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
 .recommendation-panel {
   border-bottom: 1px solid var(--line);
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 0.74fr);
   min-height: 186px;
 }
 
-.recommendation-form {
+.simulator-left-panel {
+  display: grid;
+  gap: 0;
+}
+
+.recent-simulations {
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.recent-simulations-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.recent-simulations-header strong {
+  color: var(--text);
+  font-size: 0.86rem;
+}
+
+.recent-simulations-header span,
+.recent-simulations-list p {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 760;
+  margin: 0;
+}
+
+.recent-simulations-list {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  max-height: 208px;
+  overflow: auto;
+}
+
+.recent-simulations-list button {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  display: grid;
+  gap: 4px;
+  min-height: 92px;
+  padding: 10px;
+  text-align: left;
+}
+
+.recent-simulations-list button:hover,
+.recent-simulations-list button.active {
+  background: var(--accent-soft);
+  border-color: rgba(255, 102, 196, 0.42);
+}
+
+.recent-simulations-list button span,
+.recent-simulations-list button small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.recent-simulations-list button strong {
+  font-size: 0.98rem;
+}
+
+.borrower-panel {
+  border-bottom: 1px solid var(--line);
+  min-height: 128px;
+}
+
+.recommendation-form,
+.borrower-form {
   align-content: start;
   display: grid;
   gap: 10px;
@@ -643,15 +767,212 @@ textarea:focus {
   padding: 14px;
 }
 
-.recommendation-form label {
+.borrower-form {
+  grid-template-columns: 1fr;
+}
+
+.borrower-panel-header {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.borrower-panel-header div {
+  display: grid;
+  gap: 3px;
+}
+
+.borrower-panel-header strong {
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.borrower-panel-header span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 760;
+}
+
+.borrower-search-field {
+  position: relative;
+  max-width: 360px;
+  width: min(360px, 44vw);
+}
+
+.borrower-email-suggestions {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
+  display: grid;
+  gap: 0;
+  left: 0;
+  margin-top: 6px;
+  overflow: hidden;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 8;
+}
+
+.borrower-email-suggestions button {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.borrower-email-suggestions button:last-child {
+  border-bottom: 0;
+}
+
+.borrower-email-suggestions button:hover {
+  background: var(--accent-soft);
+}
+
+.borrower-email-suggestions span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 760;
+}
+
+.recommendation-form label,
+.borrower-form label {
   gap: 5px;
 }
 
 .recommendation-form input,
-.recommendation-form select {
+.recommendation-form select,
+.borrower-form input,
+.borrower-form select {
   border-radius: 8px;
   min-height: 38px;
   padding-inline: 10px;
+}
+
+.borrower-row {
+  align-items: start;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 126px minmax(150px, 0.85fr) minmax(150px, 0.85fr) 150px 180px minmax(260px, 1.25fr) 108px;
+  padding: 12px;
+}
+
+.borrower-row + .borrower-row {
+  margin-top: 2px;
+}
+
+.borrower-validate,
+.borrower-table button {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  display: inline-flex;
+  justify-content: center;
+}
+
+.borrower-civility-field select,
+.borrower-birthdate-field input,
+.borrower-mobile-field input {
+  width: 100%;
+}
+
+.borrower-email-field input {
+  width: 100%;
+}
+
+.borrower-form label.invalid input {
+  border-color: #ef4444;
+}
+
+.borrower-form label span {
+  color: #f87171;
+  font-size: 0.72rem;
+  font-weight: 760;
+}
+
+.borrower-validate {
+  align-self: end;
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 820;
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.borrower-validate:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.borrower-validation-message {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 760;
+  margin: -2px 0 0;
+}
+
+.borrower-validation-message.error {
+  color: #f87171;
+}
+
+.borrower-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: auto;
+}
+
+.borrower-table {
+  min-width: 760px;
+}
+
+.borrower-table th,
+.borrower-table td {
+  font-size: 0.8rem;
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.borrower-table td:last-child,
+.borrower-table th:last-child {
+  text-align: right;
+  width: 58px;
+}
+
+.borrower-table button {
+  background: var(--panel);
+  height: 32px;
+  width: 32px;
+}
+
+.borrower-table input,
+.borrower-table select {
+  border-radius: 7px;
+  min-height: 32px;
+  min-width: 0;
+  padding-inline: 8px;
+  width: 100%;
+}
+
+.borrower-table-actions {
+  display: inline-flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.borrower-table-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .budget-lines {
@@ -1579,8 +1900,16 @@ td span {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .borrower-form {
+    grid-template-columns: 1fr;
+  }
+
   .income-line {
     grid-template-columns: minmax(0, 1fr) minmax(90px, 0.6fr) minmax(96px, 0.55fr) 36px;
+  }
+
+  .borrower-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .income-line-note {
@@ -1642,13 +1971,15 @@ td span {
     flex-direction: column;
   }
 
-  .recommendation-form {
+  .recommendation-form,
+  .borrower-form {
     grid-template-columns: 1fr;
   }
 
   .budget-lines,
   .income-lines-header,
-  .income-line {
+  .income-line,
+  .borrower-row {
     align-items: stretch;
     grid-template-columns: 1fr;
   }

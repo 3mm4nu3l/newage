@@ -29,7 +29,9 @@ export async function POST(request: NextRequest) {
   const recommendations = keepBestRecommendationByBank(await findRateRecommendations(profile));
   const projectAmount = toNumber(body.projectAmount) ?? 0;
   const contributionAmount = toNumber(body.contributionAmount ?? body.contribution) ?? 0;
-  const financedAmount = Math.max(0, projectAmount - contributionAmount);
+  const propertyState = typeof body.propertyState === "string" ? body.propertyState : "OLD";
+  const notaryFees = calculateNotaryFees(projectAmount, propertyState);
+  const financedAmount = Math.max(0, projectAmount + notaryFees - contributionAmount);
   const age = toNumber((profile.criteria as Record<string, unknown> | undefined)?.age) ?? 0;
   const annualIncome = profile.incomeTotalCents ? profile.incomeTotalCents / 100 : 0;
   const monthlyIncome = annualIncome / 12;
@@ -46,6 +48,7 @@ export async function POST(request: NextRequest) {
     ok: true,
     summary: {
       financedAmount,
+      notaryFees,
       contributionRate: projectAmount > 0 ? (contributionAmount / projectAmount) * 100 : null,
       durationYears: profile.durationMonths / 12,
       brokerageFee,
@@ -86,8 +89,9 @@ export async function POST(request: NextRequest) {
           brokerageFee,
           bankFee,
           creditLogementFee,
-          totalFees,
-          totalCost: totalInterest + totalInsurance + totalFees,
+          notaryFees,
+          totalFees: totalFees + notaryFees,
+          totalCost: totalInterest + totalInsurance + totalFees + notaryFees,
           insurance: insuranceRate,
           insuranceCoverageRate,
         },
@@ -193,6 +197,11 @@ function calculateTotalInterest(amount: number, annualRate: number, durationMont
 
 function calculateMonthlyInsurance(amount: number, annualInsuranceRate: number, coverageRate: number) {
   return Math.round((amount * coverageRate * (annualInsuranceRate / 100)) / 12);
+}
+
+function calculateNotaryFees(projectAmount: number, propertyState: string) {
+  const rate = propertyState === "OLD" ? 0.075 : 0.025;
+  return Math.round(projectAmount * rate);
 }
 
 function getBorrowerInsuranceRate(age: number) {
